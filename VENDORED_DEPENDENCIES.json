@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "snapshot": "flash-attention-rdna3-c18",
+  "target": {
+    "backend": "ROCm CK",
+    "gpu_arch": "gfx1100"
+  },
+  "flash_attention": {
+    "source": "https://github.com/Dao-AILab/flash-attention.git",
+    "revision": "b76e12ce42aea43fcc13b2f5eeeceda156c1dbe4",
+    "nearest_ancestor_tag": "fa4-v4.0.0.beta4",
+    "local_changes": "captured in this repository"
+  },
+  "composable_kernel": {
+    "source": "https://github.com/ROCm/composable_kernel.git",
+    "revision": "13f6d635653bd5ffbfcac8577f1ef09590c23d78",
+    "layout": "vendored ordinary directory",
+    "local_changes": "34 modified tracked files and 4 new canonical headers"
+  },
+  "cutlass": {
+    "source": "https://github.com/NVIDIA/cutlass.git",
+    "revision": "7127592069c2fe01b041e174ba4345ef9b279671",
+    "layout": "vendored ordinary directory",
+    "local_changes": "none at freeze time"
+  },
+  "validated_environment": {
+    "python": "3.12.7",
+    "pytorch": "2.12.0+rocm7.2",
+    "hip": "7.2.53211"
+  },
+  "validated_artifact": {
+    "filename": "flash_attn_2_cuda.cpython-312-x86_64-linux-gnu.so",
+    "sha256": "6be4ac4c2b26610afb8b493da9a5a4883757a5d1b73e546393bc723de409406b",
+    "git_policy": "release asset only; not stored in source Git"
+  },
+  "validation_report": "docs/release/RESULTS.md"
+}

@@ -1,0 +1,67 @@
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.eggs/
+*.egg-info/
+*.egg
+.venv/
+venv/
+
+# Root build and packaging outputs
+/build/
+/build_logs/
+/dist/
+/sdist/
+/develop-eggs/
+/parts/
+/.installed.cfg
+/flash_attn_config.py
+
+# Local experiment and profiler archives.  These remain in the release2
+# workspace but are deliberately outside the source-release Git boundary.
+/testoutput/
+/rocprof_hw_output/
+/codeobj_baseline/
+/flash-attn-fa4-prebuilt/
+/AI/
+/*.ncu-rep
+/*.log
+/*.lock
+/*.pt
+/*.bin
+/*.o
+/*.o:*
+/*.so
+/*.so:*
+/*.s
+/*.tar.gz
+/flash_attn_fa4_*_prebuilt_*
+/fmha_*hipv4*
+/report_diff_vs_*.md
+/crash_stats*.csv
+/miracle_stats*.csv
+/pmc*.csv
+/pmc_counters.txt
+/*_NOTE.md
+/command.md
+/command.txt
+/history.txt
+/benchmark_torch_vs_flash_attn_plot.py
+/debug_triton_flash_attn_minimal.py
+/test_wmma*
+
+# Generated ROCm hipify mirrors inside the vendored CK tree.  Canonical
+# headers remain tracked and hipify recreates these during a build.
+/csrc/composable_kernel/**/*_hip.hpp
+
+# Local IDE/agent metadata and redistributability-unclear reference PDFs
+.DS_Store
+.idea/
+.vscode/
+.claude/
+.agents/
+.codex/
+.summary.md
+/docs/*.pdf

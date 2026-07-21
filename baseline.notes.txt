@@ -1,0 +1,21 @@
+
+File: flash_attn_2_cuda.cpython-312-x86_64-linux-gnu.baseline.so
+Format: elf64-x86-64
+Arch: x86_64
+AddressSize: 64bit
+LoadName: <Not found>
+NoteSections [
+  NoteSection {
+    Name: .note.gnu.build-id
+    Offset: 0x270
+    Size: 0x24
+    Notes [
+      {
+        Owner: GNU
+        Data size: 0x14
+        Type: NT_GNU_BUILD_ID (unique build ID bitstring)
+        Build ID: bfb33efb1bb2d52560a672deb58e24899c2c0db8
+      }
+    ]
+  }
+]

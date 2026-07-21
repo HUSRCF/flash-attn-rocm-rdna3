@@ -1,0 +1,735 @@
+# CK split_dk Debug Todo
+
+## Locked Facts
+
+- [x] `crash 1024` and `512 -> 1024 miracle` hit the same CK kernel path.
+- [x] Current repro is on the `_split_dk` kernel variant:
+  - runtime kernel name contains `_split_dk`
+  - active pipeline is `BlockFmhaBwdDKDVPipelineKRKTRVRIGLP`
+  - not the fused `BlockFmhaBwdDQDKDVPipelineKRKTRVRIGLP`
+  - active `KGradEpiloguePipeline` is codegen's
+    `Default2DEpilogue<Default2DEpilogueProblem<AccDataType, KGradDataType, false, (dpad > 0)>>`
+  - current `dk` epilogue is codegen default `MemoryOperation::set`, not a confirmed atomic-add path
+- [x] Failure is `dk`-only; `dq` and `dv` are stable.
+- [x] The real sequence-length cliff is earlier than `1024`:
+  - user’s repeated boundary checks put the true transition near `768 -> 770`
+  - `1024` is a convenient repro, not the first failing length
+- [x] Guard/poison stats are clean; no obvious OOB or NaN/Inf stomp.
+- [x] Old `G3_*` probes are exhausted:
+  - `G3_HOT/TAIL_CTX` did not show topology drift
+  - `G3_HOT/TAIL_QT_P*` and `G3_HOT/TAIL_DST_P*` did not separate good/bad runs
+  - those probes are now removed from the true source
+- [x] Historical sampled-point probes were stable before removal:
+  - `DK_RETURN_TARGET` stayed identical across repeated `S=1024` runs while host-side result still flipped `OK/BAD`
+  - `DK_LOGICAL_PRE` and `DK_LOGICAL_POST` also stayed identical at the sampled element
+- [x] In the current repro `Hq == Hk == 4`, so host code does not execute the MQA/GQA `sum_out(dk)` path.
+- [x] Host-side whole-tensor probe now shows the corruption is real in `dk_expanded`, not just in the final checker:
+  - repeated bad `S=1024` runs produce different `DK_HOST_GLOBAL` argmax locations
+  - sampled point `(block=(4,1,1), m=57, n=10)` stays stable while other global `dk` elements drift
+- [x] `CK_TILE_FMHA_BWD_WMMA_SGRADT_LDS_REMAP` is not a pure perf switch:
+  - on this WMMA path it selects the real `gemm_2.C -> gemm_3.A` layout conversion route
+  - forcing it off is not a valid isolation experiment if `kDirectBypassCompatible` does not hold
+  - user-observed "turn it off and everything is wrong" matches the source logic
+- [x] `SGRADT_*` first failed to appear because of include-order:
+  - `block_fmha_bwd_pipeline_default_policy.hpp` had `#if CK_TILE_DEBUG_BWD_NAN_STATS`
+  - but did not define that macro locally before first inclusion
+  - with `#pragma once`, an earlier include could freeze those probe blocks out of the TU
+  - fix: define `CK_TILE_DEBUG_BWD_NAN_STATS` at the top of `default_policy.hpp`
+- [x] Ground-zero `block id` is not stable:
+  - host-reported bad `(SeqIdx // 64)` drifts across runs
+  - therefore "chase one bad block/tile" is not a reliable primary strategy
+- [x] Current `SGRADT_*` result only proves the sampled remap points are self-consistent:
+  - sampled `SGRADT_PRE` and `SGRADT_POST` sets match
+  - this excludes obvious corruption at those sampled remap coordinates
+  - it does **not** exclude corruption elsewhere in the same stage or in later `gemm_3 -> dk_acc`
+- [x] `SGRADT_*` is now informational but too noisy for default runs:
+  - kept in source
+  - default switched to off
+- [x] `DK_RETURN_FP` has been removed:
+  - coordinate-based sampling did not add evidence over `DK_RETURN_T0`
+  - compile/log pressure was not justified
+- [x] New return-stage probe is `DK_RETURN_T0`:
+  - emitted by `threadIdx.x == 0` for every block
+  - samples raw `dk_acc.get_thread_buffer()`
+  - reports `absmax` and `s0..s3`
+  - should be compared as a multiset/digest, not by block id
+- [x] Earlier `DK_RETURN_T0` miss was a path mismatch, not a parser bug:
+  - probes had been added to `dq_dk_dv` pipeline
+  - actual runtime path was `dk_dv` pipeline
+  - `dk_dv` path now also has `DK_RETURN_T0`
+- [x] First `DK_RETURN_T0` result on the real `_split_dk` path:
+  - `S=1024` good and bad runs share the same digest
+  - current evidence says the bug is not visible in the sampled pre-return `dk_acc` block fingerprints
+  - boundary moves downstream to split-dk writeback / merge / materialization path
+- [x] `DK_EPI_CAST_T0` is also stable between `S=1024` good and bad runs:
+  - `S=1024 OK` and `BAD` share the same `DK_EPI_CAST_T0` digest
+  - cast from `dk_acc_tile` to `KGradDataType` is not the first visible split
+- [x] `DK_EPI_CAST_SIG_T0` is also stable between `S=1024` good and bad runs:
+  - `S=1024 OK` and `BAD` share the same `DK_EPI_CAST_SIG_T0` digest
+  - the coarse cast-tile signature is not the first visible split
+- [x] Current probe build's active cliff has shifted:
+  - current reproducible boundary is `S=768 OK` vs `S=769 BAD`
+  - this replaces older informal boundary assumptions while the debug probes are compiled in
+- [x] `clear_qt_lds` fastest-verify experiment is now demoted and rolled back:
+  - pre-clearing the whole `qt_lds` block before writing shuffled Q does not fix the cliff
+  - `768` remains `OK`, `769` remains `BAD`
+  - therefore "partial-tail skips LDS writes and leaves stale `qt_lds`" is not the primary cause
+- [x] Stronger `qt_lds` full-overwrite A/B was also negative and has been rolled back:
+  - tried zero-storing the whole `shuffled_q_lds_write_window` block immediately before every
+    real `qt_lds` write in the active `dk-only split_dk` pipeline
+  - result: no meaningful improvement on the `768/769+` instability
+  - conclusion:
+    - simple stale-QT-content theory is further demoted
+    - do not keep retrying `qt_lds` pre-clear / zero-before-write variants as the mainline fix
+- [x] Current `768/769` behavior now argues against a pure resource-pressure explanation:
+  - repeated `S=768` runs can stay stable for very long streaks
+  - cold `S=769` can fail immediately
+  - but `768 -> 769` run order can sometimes let `769` pass
+  - this is not the signature of "cache/L2/VRAM pressure alone"
+  - treat cache/scratch pressure as a possible amplifier, not as a sufficient root cause
+- [x] `DK_EPI_T0` now separates `S=1024` good and bad runs:
+  - `S=1024 OK` and `BAD` have different `DK_EPI_T0` digests
+  - current first captured split is after cast, inside epilogue store / writeback path
+- [x] `DK_EPI_MODE` now confirms the active store-path mode:
+  - baseline prints `raw=1 no_raw=0 force=0 row=0 pad_m=0 pad_n=0`
+  - because `pad_m == 0 && pad_n == 0`, baseline does not take the default raw-store branch
+  - baseline is effectively on the normal-store path
+- [x] Store-path A/B result so far:
+  - `CK_TILE_DEBUG_FORCE_STORE_PATH=-1` behaves like baseline and does not eliminate `S=1024` failure
+  - `CK_TILE_DEBUG_FORCE_STORE_PATH=1` makes `S=1024` consistently `BAD` and worsens the error
+  - raw-store is not the default path here and is not a fix; it behaves more like a worse alternate path
+- [x] The old `HOST_ARGMAX_OOB` / "ghost block" narrative must stay demoted:
+  - earlier `HOST_ARGMAX_OOB` came from a log-parser association bug, not a trusted runtime fact
+  - current active `dk` epilogue path is not yet shown to use `atomicAdd`, so "zero-init + atomic stomp" is not a grounded primary explanation
+- [x] `GROUND ZERO` is restored in the main runner:
+  - `test_ck_tile_probe.py` again prints `[💥 GROUND ZERO]` for large `dk_err`
+  - `ground=-` only means the corresponding raw log section did not contain that line
+
+## Current Boundary
+
+- [x] Historical sampled-point probes stayed stable before removal:
+  - `DK_RETURN_TARGET`
+  - `DK_LOGICAL_POST`
+- [ ] Corruption is therefore in unsampled `dk` elements, not in the currently sampled point.
+- [x] Whole-tensor host summaries already separate bad runs.
+- [x] `SGradTFromGemm2CToGemm3A(...)` sampled candidates are currently clean.
+- [x] `S=1024` good/bad already share the same `DK_RETURN_T0` digest.
+- [x] `S=1024` good/bad also share the same `DK_EPI_CAST_T0` digest.
+- [x] `S=1024` good/bad diverge at `DK_EPI_T0`.
+- [x] In the row-store run, `S=1024 OK/BAD` also diverge at:
+  - `DK_EPI_SIG_T0`
+- [x] In the row-store run, `DK_ROW_DSTR_T0` does **not** stay identical:
+  - `S=1024 OK` and `BAD` have different `DK_ROW_DSTR_T0` digests
+  - the per-thread `distributed_indices -> y_linear` access pattern is now a confirmed split point
+- [x] `DK_ROW_CMP_T0` shows `operator[] == direct` on sampled slots:
+  - sampled `d0..d3` stay zero
+  - current evidence excludes `operator[]` as an independent source of divergence
+- [x] `DK_ROW_YSEQ_T0` and `DK_ROW_YVAL_T0` are now active:
+  - `YSEQ` captures the accessed `y_linear` sequence only
+  - `YVAL` captures the corresponding `(y, value)` sequence
+- [x] `DK_ROW_PATH_T0` and `DK_ROW_DI_T0` are now active:
+  - `PATH` captures representative `(y_linear, x_global.m, x_global.n, in_bound)` attempts
+  - `DI` captures representative raw distributed-index tuples before they are folded into `y_indices`
+- [x] For `S=1024`, `OK/BAD` share the same main `YSEQ` mode `0..31`, but the mode distribution differs:
+  - both sides still have a dominant full `part=0,1,2,3` sequence
+  - `BAD` mixes in a different distribution of partial/missing-part modes
+  - therefore "missing part" is not itself a sufficient explanation, but row-store access-mode distribution still splits `OK/BAD`
+- [x] `768 OK` vs `769 BAD` now shows a sharp same-build cliff:
+  - all row-store summaries split across the cliff
+  - but this is a cross-length comparison, so it does not by itself prove the first bug stage
+- [x] `768 OK` vs `769 BAD` row-compare currently shows:
+  - `YSEQ` representative top fingerprint unchanged
+  - `PATH` representative top fingerprint unchanged
+  - first representative `DI` difference at slot 0 is `(0,3,0,0) -> (0,1,0,0)`
+  - therefore the earliest currently observed representative split is in raw distributed-index tuples
+- [x] Current source audit of Stage 6 narrows the live path shape:
+  - `dst_reg_tensor` is instantiated with `MakeSGradTRegSliceBlockDescriptor<Problem>()`
+  - active WMMA `SGradTFromGemm2CToGemm3A(...)` uses `TransposeBlockTensorThroughLds(dst_out, ds_in, ds_lds_ptr)`
+  - `dst_reg_tensor` then feeds `gemm_3` directly as A; there is no extra A-side LDS/window reload between remap and `gemm_3`
+- [x] Current source audit also lowers the chance of a simple dynamic Stage-6 helper bug:
+  - `TransposeBlockTensorThroughLds(...)` is a branchless cooperative block transpose built from static `distributed_spans` and `get_x_indices_from_distributed_indices(...)`
+  - `gemm_3` A consumption is a static `get_y_sliced_thread_data(...)` over the exact same A block distribution type
+  - neither site contains sequence-length-specific control flow or tail gating
+  - therefore a `768 -> 769` cliff is more likely to enter as different upstream `ds_gemm` contents or different distributed-index interpretation, not as a simple Stage-6 timing/if-branch bug in these helpers themselves
+- [x] Current source audit of `gemm_2.C -> dp_acc -> ds_gemm` lowers the chance of a Stage-5 distribution mismatch:
+  - `SPGradBlockTileType` is exactly `decltype(gemm_2.MakeCBlockTile())`
+  - Stage 5 updates `dp_acc(i_j_idx)` by iterating `decltype(dp_acc)::get_distributed_spans()`
+  - the same `i_j_idx` is used to read `p[i_j_idx]`
+  - policy static asserts already require `Gemm0CBlockDstr == Gemm2CBlockDstr`
+  - therefore `p` and `dp_acc` are intentionally interpreted under the same block-level C distribution when forming `ds = p * (dp - d)`
+- [x] Current source audit of `do_reg_tensor / v_reg_tensor / d` also lowers the chance of a local Stage-4 content-layout bug:
+  - `do_reg_tensor` is loaded from `do_lds_read_window`, whose register slice descriptor is built directly from `GetOGradVBlockGemm<Problem>()` A distribution
+  - `do_block_tile` itself comes from `MakeOGradDramTileDistribution<Problem>()` and is stored into `do_lds_window` without shuffle on the dk path
+  - `v_reg_tensor` is preloaded once from `v_dram -> v_lds -> v_lds_read_window` using `MakeVRegBlockDescriptor<Problem>()`, i.e. directly from the same `gemm_2` B distribution family
+  - `d` is a 1D row tile loaded from `d_dram -> d_lds -> d_lds_read_window`, and its dram/LDS/read descriptors are all shared with the LSE path via `MakeLSEDDramTileDistribution(...)` and `MakeLSEDLdsReadBlockDescriptor(...)`
+  - none of these three paths contain obvious sequence-length-specific branching or partial-tail write skipping analogous to the rejected `qt_lds` hypothesis
+- [x] Current source audit of `do_block_tile / d_block_tile` HBM loads points to load-side zero-fill semantics, not stale-data semantics:
+  - `do_dram_window` starts at `{seqlen_q_start, 0}` with `MakeOGradDramTileDistribution<Problem>()`
+  - `d_dram_window` starts at `{seqlen_q_start}` with `MakeLSEDDramTileDistribution<Problem, decltype(gemm_0)>()`
+  - `load_tile(...)` reaches `tile_window.load(...) -> tensor_view.get_vectorized_elements(...) -> buffer_view<global>::get(...)`
+  - the global `buffer_view` is created by default `make_buffer_view(...)`, which sets `InvalidElementUseNumericalZeroValue=true`
+  - therefore invalid/OOB global loads on these paths return numerical zero, unlike LDS stores that can skip writes
+  - this makes the RDNA WMMA + GDDR6 context more relevant to vectorized validity granularity and address-generation correctness than to stale-LDS-content theories on the `do/d` HBM load side
+- [x] Current source audit corrects an over-strong `d_dram` tail-zeroing story:
+  - the real runtime path wraps `softmax_lse`/`d` through `make_debug_lsed_pair(...)`, so physical guard rows may exist beyond logical `seqlen_q`
+  - `d_dram` / `lse_dram` are created as `make_naive_tensor_view_packed(..., number<FmhaPipeline::kM0>{})`
+  - however `make_naive_tensor_descriptor_packed(...)` only bakes `GuaranteedLastDimensionVectorLength` into descriptor metadata when the last dimension length is compile-time constant; runtime `seqlen_q` does not automatically prove a `kM0`-wide software vector guarantee
+  - the packed descriptor uses `unmerge`, and `unmerge::is_valid_upper_index_mapped_to_valid_lower_index(...)` is unconditionally `true`
+  - therefore the exact statement "the `768..775` tail vector is software-marked invalid because some lanes exceed `seqlen_q`" is not yet supported by source
+  - if whole-vector zeroing or corruption exists here, the more likely locus is lower AMD buffer-load / resource-boundary behavior, not the current `tile_window` boolean validity gate by itself
+- [x] External ISA check on RDNA MUBUF/raw-buffer load semantics now rules out the strongest version of the `d_dram` "collective execution" theory:
+  - the CK path here uses raw global buffer loads (`raw_buffer_load` / MUBUF family), not MTBUF / formatted buffer loads
+  - for RDNA2/RDNA3 MUBUF multi-dword raw loads, partial OOB is handled per-component rather than all-or-nothing
+  - therefore a vector load crossing the logical tail should preserve in-bound prefix components and zero only the OOB suffix components
+  - this directly weakens the earlier claim that a partial `d_dram` vector load would necessarily wipe the valid head element together with the invalid tail elements
+  - the "all-or-nothing" whole-vector zeroing rule remains relevant for MTBUF / formatted loads, but that is not the active CK raw-buffer path under audit here
+  - with this ISA fact, the likely remaining risk shifts from raw global load semantics to: upstream `softmax_d` contents, later consumers' treatment of zero-padded tail values, or a different non-MUBUF path
+- [x] Current source audit of the upstream `dot_do_o -> d` producer further weakens the old `d_dram` consumer-side tail-vector theory:
+  - the real `FmhaBwdOGradDotOKernel` wraps `d_ptr` as `make_naive_tensor_view_packed(..., number<1>{})`, not `number<kM0>{}`
+  - it then applies `pad_tensor_view(..., make_tuple(number<kM0>{}), sequence<kPadSeqLenQ>{})` before creating `d_dram_window`
+  - so producer-side `d` generation is explicitly organized as a scalar-packed 1D tensor plus an outer sequence-length pad policy
+  - this means the later Stage-4 consumer's `make_naive_tensor_view_packed(..., number<FmhaPipeline::kM0>{})` view is not simply mirroring the producer's exact global-layout contract
+  - therefore any `768 -> 769` cliff tied to `d` now looks more like a producer/consumer contract mismatch or later interpretation mismatch than a simple "raw load crosses tail and zeros the valid prefix" story
+- [x] Producer/consumer `d` layout comparison corrects the earlier over-strong mismatch story:
+  - producer side `BlockFmhaBwdOGradDotO` reduces the `PreO/PreOGrad` 2D tile over x-dim `1`, yielding a 1D `d_dstr` with:
+    - no replication dims
+    - surviving H dims `[M0, 32, 1]` where `M0 = kM0 / 32`
+    - partition ownership on the first two M minors
+    - a degenerate single y dim of length `1`
+  - producer-side global row formula is therefore `x_m = 32 * warp_id + lane_id`, i.e. each thread writes exactly one contiguous row inside the `[i_m0, i_m0 + kM0)` tile
+  - consumer side `MakeLSEDDramTileDistribution(...)` is replica-aware, but its x-index formula still covers the same contiguous row interval `[i_m0, i_m0 + kM0)`; the extra `R` dims only duplicate ownership, they do not permute global row order
+  - source-level consequence: producer and consumer do **not** appear to disagree on the physical 1D global-memory row layout of `d`
+  - current evidence demotes the earlier "producer/consumer `d` layout mismatch" hypothesis; the difference is in thread ownership / replication semantics, not in the physical row order written to global memory
+- [x] `BlockFmhaBwdOGradDotO` and Stage 5 currently appear numerically self-consistent:
+  - non-dropout case:
+    - `dot_do_o` computes `d_i = sum_j(o_ij * do_ij)`
+    - because `o = P @ V` and `dp = dO @ V^T`, this equals the standard row scalar `sum_j(P_ij * dp_ij)`
+    - Stage 5 then uses `ds_ij = P_ij * (dp_ij - d_i)`, matching the softmax backward contract
+  - dropout case:
+    - `BlockDropoutBwd::Run(...)` mutates `p` to `+P_ij` for kept entries and `-P_ij` for dropped entries; it does **not** scale kept entries by `rp_undrop`
+    - `dot_do_o` multiplies the row reduction by `p_undrop = (1 - p_drop)`, compensating for the fact that `o` already contains kept-probabilities scaled by `1 / p_undrop`
+    - Stage 5 uses:
+      - kept: `P_ij * (dp_ij - d_i)`
+      - dropped: `-P_ij * d_i`
+    - final `dk_acc` is then scaled by `scale_rp_undrop = scale / p_undrop`
+    - together this reconstructs the expected dropout + softmax chain rule rather than introducing an obvious algebraic mismatch
+  - current evidence therefore demotes "`softmax_d` formula itself is wrong" as a primary explanation
+- [x] Current source audit of the `p` tail-formation path does not show an obvious first-divergence bug:
+  - both hot-loop and tail use the same sequence:
+    - optional bias/alibi update on `s_acc`
+    - `mask.IsEdgeTile(...)` fast-path check
+    - `set_tile_if(..., -inf, mask.IsOutOfBound(...))` on edge tiles
+    - `row_lse = log2e * get_validated_lse(lse[i])`
+    - `p = exp2(s_acc - row_lse)` (or `exp2(scale * s_acc - row_lse)` when no bias/alibi)
+    - optional `dropout.Run(...)`
+  - under masking / elementwise-bias, `get_validated_lse(...)` maps `-inf -> 0`, and masked-out entries become `exp2(-inf - 0) = 0`, which is numerically coherent
+  - under non-masking, edge handling only checks the K-side/right-pad, not invalid Q rows in the final partial tile
+  - however those invalid Q rows are sourced from global OOB-zeroed `q/do/d/lse` loads, so in the active `dk` path they appear to collapse into zero-contribution rows rather than an obvious exploding `p`-contract violation
+  - this makes "`p` tail softmax formation itself is algebraically wrong" a weaker primary suspect than before, though the non-masking invalid-Q-row treatment remains a subtle implementation asymmetry worth remembering
+- [x] Current source audit of `lse/do/d` prefetch-consume timing does not show an off-by-one / wrong-tile hazard:
+  - init:
+    - prefetch `lse/do/d` tile 0 from DRAM
+    - immediately advance each DRAM window by `kM0`
+    - store tile 0 into LDS
+  - hot loop iteration `i`:
+    - first prefetch tile `i+1` from DRAM into register temporaries and advance DRAM windows again
+    - Stage 2 consumes `lse` for tile `i` from `lse_lds_read_window`
+    - Stage 4 consumes `do/d` for tile `i` from `do_lds_read_window` / `d_lds_read_window`
+    - only after those reads does the code `block_sync_lds()` and overwrite LDS with prefetched tile `i+1`
+  - tail:
+    - does **not** prefetch a further tile
+    - consumes the last hot-loop-produced LDS-resident `lse/do/d` tile exactly once
+  - therefore, on the active `kDoDK` path, `lse/do/d` appear fully aligned in lifetime and do not show a simple read-current / write-next mismatch
+- [x] Heavy tri-path row-store probe was tried once and has now been removed from mainline code:
+  - temporary additions were:
+    - third static-access path `thread_buffer().at(number<y_linear>{})`
+    - extra compare logs `DK_ROW_DIRECT_AT_T0` / `DK_ROW_CMP2_T0`
+    - optional row-read schedule barrier knob
+  - result:
+    - on one build the three paths matched
+    - but the added probe shape materially increased register pressure and shifted the failure boundary much earlier (eventually even `768` became unstable)
+  - conclusion:
+    - this was useful as evidence of strong RDNA codegen/register-pressure sensitivity
+    - but it is too invasive for baseline first-divergence localization
+  - current state:
+    - heavy tri-path probe code has been reverted
+    - mainline probe set should remain on the lighter `SRC/DIRECT/CMP/DSTR/PATH/DI/YVAL/...` family
+- [x] New "small probe just between `SGradTFromGemm2CToGemm3A(...)` and `gemm_3(...)`" is now explicitly disallowed:
+  - user reports that adding probes in this zone sharply lowers the safe sequence-length bound and
+    reintroduces random behavior
+  - therefore that location is too code-shape-sensitive for trustworthy first-divergence
+    instrumentation
+  - avoid adding new inline probes there unless the goal is compiler-sensitivity study rather than
+    correctness localization
+- [x] Current codebase does not expose a direct RDNA3 VOPD control knob in the active row-store path:
+  - no explicit `VOPD` / `v_dual` control exists in the audited epilogue
+  - the only relevant source-level levers are generic schedule controls such as `__builtin_amdgcn_sched_barrier(...)` and occasional `s_nop`
+  - therefore a suspected RDNA3 VOPD / dual-issue problem would be a compiler/backend behavior that can only be probed indirectly by changing code shape or inserting scheduling barriers
+- [x] CK poison/guard debug envs are real but currently limited in the main Python call path:
+  - `FLASH_ATTN_CK_BWD_POISON_OUTPUTS`
+  - `FLASH_ATTN_CK_BWD_GUARD_ROWS`
+  are compiled into the active `.so`
+  - however `flash_attn_interface.py` preallocates `dq/dk/dv` and passes them into
+    `flash_attn_gpu.bwd(...)`
+  - therefore wrapper-side "self-allocate guarded output" logic is partly bypassed on the standard
+    Python path
+  - practical consequence:
+    - "turning those envs on made no difference" does **not** prove the env plumbing is absent
+    - it only proves they are not a decisive signal on the current path
+  - a temporary CK-wrapper override was tried and then rolled back; do not assume that path is still active
+- [ ] Primary next zone should no longer be a floating bad block id.
+- [ ] Next probe must use a cross-block invariant or stage-wide signature.
+- [x] New forward step: probe final pre-epilogue `dk_acc` with block-agnostic return fingerprints:
+  - tag: `DK_RETURN_T0`
+  - stage: after `gemm_3` accumulation and final scale, before kernel return
+  - analysis target: per-run multiset/digest of `(absmax, s0, s1, s2, s3)`
+
+## Next Probe
+
+- [x] Active caller-side probes on the epilogue/store path are now:
+  - `DK_EPI_CAST_T0`
+  - `DK_ROW_GLOB_POST_T0`
+  - `DK_ROW_GLOB_CMP_T0`
+- [x] Use host-side tensor summary probe:
+  - `DK_HOST_GLOBAL`
+  - now always-on in host code; no extra env needed
+- [x] Current remap-site probes were useful as a one-time exclusion:
+  - `SGRADT_CTX`
+  - `SGRADT_PRE`
+  - `SGRADT_POST`
+  - sampled candidate sets were `PRE == POST`
+- [ ] Do not keep extending candidate-A/B style probes:
+  - bad host argmax block ids drift
+  - static tile probes have low hit rate and weak evidentiary value
+- [ ] Replace with one of these non-positional probes:
+  - [x] block-agnostic `DK_RETURN_T0`
+  - [x] block-agnostic `DK_EPI_CAST_T0`
+  - [x] row-store `DK_ROW_YSEQ_T0`
+  - [x] row-store `DK_ROW_YVAL_T0`
+  - [x] row-store `DK_ROW_PATH_T0`
+  - [x] row-store `DK_ROW_DI_T0`
+  - [x] removed `DK_RETURN_FP`
+  - [x] removed sampled-point `DK_RETURN_TARGET`
+  - [x] removed sampled-point `DK_LOGICAL_PRE/POST`
+  - [ ] block-agnostic Stage-6 `SGradT` digest before and after `TransposeBlockTensorThroughLds(...)`
+  - [ ] block-agnostic Stage-6 digest on `dst_reg_tensor` as consumed by `gemm_3.A`
+  - [ ] split-dk merge/reduction-side checksum/absmax accumulation for paths with `Hq != Hk`
+  - [ ] first-divergence capture keyed by stage, not keyed by block id
+- [x] The next two boundary probes are now added in source:
+  - epilogue post-store readback probes:
+    - `DK_ROW_GLOB_POST_T0`
+    - `DK_ROW_GLOB_CMP_T0`
+    - inserted immediately after `o_tensor_view.get_buffer_view()(o_offset) = ...`
+- [ ] Next validation pass should grep and compare:
+  - `DK_ROW_GLOB_POST_T0`
+  - `DK_ROW_GLOB_CMP_T0`
+  across `S=768/769`, and when useful `S=1024 OK/BAD`
+- [x] Clarification on the current epilogue experiment state:
+  - when `DK_EPI_MODE` prints `row=1`, the build is already on the forced row-store path
+  - that path is the full-block scalar per-element epilogue store path, not just a tail-only path
+  - current build marker for this state is:
+    - `CK_EPILOGUE_SCALAR_ROW_STORE_V2_20260324`
+- [x] Experimental direct-slot store trial was negative and is superseded:
+  - replacing only the final store expression with direct-slot write did not remove the failure
+  - this demotes "final writeback expression only" as the primary cause
+- [x] Linear thread-buffer-copy experiment was also negative and is superseded:
+  - copying `o_cast_tile.thread_buffer[i] -> o_store_tile.thread_buffer[i]` before store did not remove the failure
+  - this demotes "post-cast materialization/store plumbing only" as the primary cause
+- [x] Naive-cast experiment was rolled back:
+  - replacing `cast_tile<ODataType>(o_tile)` with a local naive per-slot cast is no longer active
+  - current code is back to baseline epilogue cast path
+- [x] Caller-side `DK_CALLER_ROW_PRE_T0` / `DK_CALLER_ROW_PRE8_T0` were exploratory and are now retired:
+  - they did not add enough durable signal to justify their code-shape and log cost
+- [x] `split_dk` Stage 6 scaffold-strip experiment can stay in-tree:
+  - in `block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp*`, removed
+    - `store_tile(ds_lds_window, ds_gemm)` after `gemm_3`
+    - the following `GemmStagedScheduler<3/4>` tail shape
+  - kept:
+    - `SGradTFromGemm2CToGemm3A(...)`
+    - `gemm_3(...)`
+  - build marker:
+    - `CK_STAGE6_SCAFFOLD_STRIP_V1_20260324`
+  - result:
+    - no meaningful improvement on `769/1024`
+    - therefore the inherited scaffold tail is not the primary root cause
+    - but the deletion is still a reasonable cleanup for the current `split_dk` dataflow and does not need rollback
+  - next suspicion should move further upstream to:
+    - `SGradTFromGemm2CToGemm3A(...)`
+    - `gemm_3(...)`
+    - or the tensors entering `gemm_3` (`dst_reg_tensor`, `qt_reg_tensor`)
+- [x] External profiler evidence now supports a spill/code-shape suspicion on the active `dk-only split_dk` path:
+  - relevant line is the `BlockFmhaBwdDKDVPipelineKRKTRVRIGLP<..., true, false>` kernel
+  - `Arch_VGPR` is already saturated at the architectural ceiling, so it does not distinguish the failing path well
+  - the stronger discriminator is `Scratch_Per_Workitem`:
+    - active `dk-only split_dk`: `2400`
+    - sibling `dv-only`: `1648`
+    - sibling `dq`: `320`
+  - `LDS_Per_Workgroup` is also highest on the active `dk-only split_dk` line
+  - interpretation:
+    - current evidence fits "high register pressure plus spill plus current code shape" better than a simple deterministic mapping bug
+    - this strengthens the suspicion on `SGradTFromGemm2CToGemm3A(...) -> TransposeBlockTensorThroughLds(...) -> gemm_3`
+- [x] First non-probe code-shape reductions materially lowered scratch on the active `dk-only split_dk` path:
+  - current active changes include:
+    - `dst_reg_tensor` hoisted out of the loop for reuse
+    - several uniform origins/offsets hoisted into explicit scalar locals
+    - `ds_gemm = cast_tile<GemmDataType>(dp_acc)` materialization removed on the cast path
+    - cast now happens inside `SGradTFromGemm2CToGemm3A(...)` via LDS transpose
+  - profiler result now shows:
+    - active `dk-only split_dk`: `Scratch_Per_Workitem 2400 -> 780`
+    - sibling `dv-only`: `1648 -> 28`
+    - sibling `dq`: `320 -> 308`
+  - interpretation:
+    - the reduction is real, so the active pressure is strongly tied to code shape / materialized temporaries
+    - however the active `dk-only split_dk` path is still the outlier and remains the primary spill hotspot
+  - `_hip` sync check:
+    - the key Stage-6 changes are already present in both `.hpp` and `_hip.hpp`
+    - current scratch not dropping further is therefore not explained by a stale `_hip` implementation
+- [x] More aggressive `Stage 6` split via a separate `[[gnu::noinline]]` helper was negative and has been rolled back:
+  - experiment:
+    - extracted `SGradTFromGemm2CToGemm3A(...) + gemm_3(...)` into a dedicated `RunStage6(...)`
+    - kept the previous `780`-scratch reductions
+  - profiler:
+    - active `dk-only split_dk`: `Scratch_Per_Workitem 780 -> 640`
+  - correctness:
+    - `S=64` still passed
+    - `S>=128` became broadly wrong on `dk`, including exact multiples of `64`
+    - this strongly suggests the new device-call boundary itself disturbed the hot-loop `Stage 6` path
+  - conclusion:
+    - do not let `static_distributed_tensor` / `thread_buffer` heavy Stage-6 state cross a device call boundary here
+    - revert the `noinline` helper, keep the earlier `780`-scratch version as the correct baseline
+- [x] A more conservative Stage-6 code-shape reduction is worth keeping:
+  - reverted the failed `warp-slice remap` rewrite of `SGradTFromGemm2CToGemm3A(...)`
+    and restored the original block-level remap semantics
+  - kept two narrower live-range changes in `block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp*`:
+    - `dst_reg_tensor` is no longer hoisted across the whole hot loop; it is now instantiated
+      locally right before `SGradTFromGemm2CToGemm3A(...) -> gemm_3(...)`
+    - when `kSeparateDKOnlyScratch` (the active `dk-only` case), `kHasBiasGrad` work is moved
+      after `gemm_3(...)` so `dbias` staging no longer overlaps the main Stage-6 live range
+  - result:
+    - there is some real improvement in stability
+    - but not enough for correctness:
+      - around `S=1024`, roughly `1 / 10` runs pass
+      - around `S=832`, roughly `5 / 10` runs pass
+    - so the direction appears valid, but the overlap reduction is still too weak
+  - conclusion:
+    - keep this version as the better baseline
+    - future attempts should continue along "reduce overlap / reduce pipelining / reduce
+      live-range entanglement" without changing `SGradT` layout semantics
+    - do **not** retry the `warp-slice remap` version; it compiled but immediately caused broad
+      mathematical failure with no scratch reduction
+- [x] `qt_stage6` family experiments are now fully audited and should be treated as a closed branch:
+  - important validation rule:
+    - any result collected without removing `build/` before rebuild is not trustworthy for this
+      family of experiments
+    - earlier apparent improvements from stale builds must be treated as invalid
+  - trusted, clean-build experiment chain:
+    - baseline:
+      - current conservative baseline only
+      - `dst_reg_tensor` localized before Stage 6
+      - `dbias` delayed after `gemm_3(...)` when `kSeparateDKOnlyScratch`
+    - `qt_stage6_window` / cooperative tile snapshot:
+      - added an extra LDS tile snapshot for `qt_reg_tensor`
+      - result: worse than baseline
+      - interpretation:
+        - adds another full cooperative distributed-tile store/load and extra LDS/indexing
+          pressure
+        - but does not simplify the compiler-visible Stage-6 object enough to offset that cost
+    - `qt_stage6_lds_ptr` by itself:
+      - no meaningful signal alone
+      - interpretation:
+        - an extra LDS pointer without changing the actual dataflow is not a real lever
+    - `get_thread_local_1d_id()` + per-thread thread-buffer snapshot:
+      - changed `qt_stage6` from cooperative tile snapshot to per-thread thread-buffer spill to
+        LDS and reload before `gemm_3(...)`
+      - result on one clean validation branch: improved relative to cooperative `qt_stage6_window`
+      - final trusted verdict after re-testing directly on the conservative baseline:
+        - still worse than keeping no `qt_stage6` snapshot at all
+      - interpretation:
+        - this direction is less bad than cooperative `qt_stage6_window`, because it forces a
+          thread-local dataflow and avoids extra distributed-tile remap machinery
+        - however it still adds enough LDS traffic / indexing / code-shape change that the net
+          result is worse than baseline
+  - final conclusion:
+    - do **not** keep any `qt_stage6` snapshot variant in-tree
+    - do **not** keep:
+      - cooperative `qt_stage6_window`
+      - per-thread `qt_stage6_lds_ptr` / `get_thread_local_1d_id()` snapshot
+      - `asm volatile("" ::: "memory")` variants
+    - all `qt_stage6` family attempts should be considered negative evidence
+    - the useful lesson is not "which snapshot style wins", but:
+      - `qt_reg_tensor` does look like a vulnerable operand path in ISA
+      - yet trying to materialize an explicit `qt_stage6` snapshot adds enough extra code-shape and
+        LDS burden that the net effect is negative
+      - therefore future work should not continue down the `qt_stage6` snapshot branch
+- [x] ISA-driven interpretation of the active `dk-only split_dk` path is now substantially stronger:
+  - clean address-based ISA extraction is available via `dump_fa_isa.sh`
+  - on the trusted `gfx1100` minimal debug build, the active BWD GPU entry addresses are:
+    - `0x0000e500`: `dv-only`
+    - `0x00014200`: `dk-only split_dk`
+    - `0x00019c00`: `dq`
+  - trusted address-window counts on the old baseline showed:
+    - `dv-only`: `scratch_load=4`, `scratch_store=4`, `ds_read=224`, `ds_write=74`,
+      `s_waitcnt=144`, `s_barrier=19`, `v_wmma=32`
+    - `dk-only`: `scratch_load=178`, `scratch_store=154`, `ds_read=330`, `ds_write=68`,
+      `s_waitcnt=270`, `s_barrier=13`, `v_wmma=48`
+  - interpretation:
+    - the `dk-only` path really is a scratch/spill outlier relative to `dv-only`
+    - the real problem is not a missing high-level branch or a pure cache-pressure story
+    - Stage 6 in source is expressed as an LDS/remap contract, but on the active `dk-only` codegen
+      it has already become an LDS + scratch mixed contract
+  - practical consequence:
+    - when judging a new experiment, prefer clean-build ISA deltas and scratch counts over
+      high-level intuition
+    - if a patch adds more distributed-tile / LDS machinery without clearly reducing scratch, it is
+      more likely to hurt than help
+- [x] Contract summary tightened using ISA/manual evidence:
+  - `s_barrier` is **not** a generic memory-completion fence
+    - if barrier is protecting LDS exchange, the relevant wait must happen before the barrier
+    - RDNA3 explicit rule: if the barrier is meant to protect outstanding memory ops, perform the
+      corresponding `s_waitcnt` first
+  - `ds_*` and `scratch_*` are different wait domains
+    - `ds_*` -> `lgkmcnt` on RDNA3
+    - `scratch_*` -> `vmcnt/vscnt` on RDNA3
+    - therefore a source-level `block_sync_lds()` only protects the LDS side of the contract
+  - `s_delay_alu` is not a formal WMMA correctness primitive
+    - it may affect schedule/code shape
+    - it should not be treated as the main fix direction for this bug
+  - WMMA hazard knowledge should be used conservatively
+    - RDNA4 documents some explicit WMMA hazard rules
+    - RDNA3 does not give equally strong correctness-level WMMA hazard tables
+    - so for this bug, the better lever remains reducing the compiler's need to spill or
+      over-complicate Stage 6, not sprinkling delay/wait hints
+- [x] Removing hot-loop next-tile prefetch overlap for `q/lse/do/d` was negative and has been rolled back:
+  - experiment:
+    - changed the hot loop from "preload next tile at loop start" to
+      "finish current tile first, then preload/store next tile at loop end"
+  - result:
+    - this broke the existing pipeline contract badly
+    - correctness collapsed once sequence crossed the bucket boundary
+  - conclusion:
+    - do not remove the hot-loop next-tile prefetch overlap wholesale
+    - that overlap is part of the current functional contract, not just a perf detail
+- [x] The later "tiny" Stage-5 live-range tightening was also negative and has been rolled back:
+  - attempted changes:
+    - shrink `p/s_acc` lifetime in source
+    - tighten `d = load_tile(d_lds_read_window)` to sit closer to Stage 5
+  - expected effect:
+    - a small live-range reduction before Stage 6 without changing `SGradT` semantics
+  - actual result:
+    - correctness collapsed immediately from the first bucket; this was not a mild regression
+    - representative outputs:
+      - `S=64`: `fwd=0.000488`, `bwd=0.924316`, `dq=0.000977`, `dk=0.924316`, `dv=0.000977`
+      - `S=128`: `fwd=0.000488`, `bwd=2.375000`, `dq=0.000977`, `dk=2.375000`, `dv=0.000488`
+      - `S=256`: `fwd=0.000244`, `bwd=1.267578`, `dq=0.000488`, `dk=1.267578`, `dv=0.000488`
+      - `S=512`: `fwd=0.000244`, `bwd=0.681641`, `dq=0.000488`, `dk=0.681641`, `dv=0.000488`
+      - `S=832`: `fwd=0.000244`, `bwd=0.759277`, `dq=0.000488`, `dk=0.759277`, `dv=0.000244`
+    - representative ground-zero locations:
+      - `S=64`: `Batch=1, SeqIdx=13, Head=2, Dim=24`
+      - `S=128`: `Batch=1, SeqIdx=7, Head=1, Dim=11`
+      - `S=256`: `Batch=1, SeqIdx=102, Head=3, Dim=32`
+      - `S=512`: `Batch=0, SeqIdx=199, Head=0, Dim=56`
+      - `S=832`: `Batch=0, SeqIdx=261, Head=2, Dim=8`
+  - conclusion:
+    - this specific `p/s_acc` / `d` lifetime surgery is not a safe "small" tweak
+    - do not retry it in the same form
+    - keep the earlier conservative baseline instead
+
+## A/B Switches
+
+- [ ] `CK_TILE_DEBUG_NO_RAW_STORE=0/1`
+- [ ] `CK_TILE_DEBUG_FORCE_STORE_PATH=-1/0/1`
+- [ ] grep `DK_EPI_MODE` to confirm raw-vs-normal store branch actually taken
+- [ ] `CK_TILE_DEBUG_FORCE_ROW_STORE=1`
+- [ ] grep `DK_ROW_SRC_T0|DK_ROW_DSTR_T0` in the next row-store experiment
+- [ ] grep `DK_ROW_DIRECT_T0` in the next row-store experiment
+- [ ] grep `DK_ROW_SLOT_T0` in the next row-store experiment
+- [ ] grep `DK_ROW_YSEQ_T0|DK_ROW_YVAL_T0` in the next row-store experiment
+- [ ] grep `DK_ROW_PATH_T0` in the next row-store experiment
+- [ ] grep `DK_ROW_DI_T0` in the next row-store experiment
+- [ ] Proposed targeted A/B: rebuild a fresh `dk_dram_window` immediately before `KGradEpiloguePipeline{}(...)`
+  - rebuild from immutable base `dk_dram`, not from the old `dk_dram_window`
+  - if this alone fixes/suppresses `S=1024`, stale window state / address-generation corruption becomes the top suspect
+  - if it does not, focus moves further inside epilogue/store mapping and writeback itself
+- [x] `CK_TILE_DEBUG_BWD_GEMM3_SCHED_BARRIER` 已實作（等效 GEMM3 sched_barrier A/B）：
+  - 在 `block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp` 和 `_hip.hpp` 的全部 4 個 `gemm_3(dk_acc, ...)` 呼叫後加上
+    `#if defined(CK_TILE_DEBUG_BWD_GEMM3_SCHED_BARRIER) / __builtin_amdgcn_sched_barrier(0) / #endif`
+  - hot loop kSGradNeedsCastToGemm 分支 + else 分支，tail 同樣兩個分支，共 8 處（兩個文件各 4 處）
+  - 啟用方式：在 build 時加 `-DCK_TILE_DEBUG_BWD_GEMM3_SCHED_BARRIER`（或在 codegen 層加 compile flag）
+  - 預期：若 compiler 在 gemm_3 的 scratch load/store 與後續 dk_acc 讀取之間存在錯誤的指令重排，加入 sched_barrier(0) 可能改善或消除問題
+  - 結果待測（需清 build/ 後重編）
+- [ ] 若 GEMM3_SCHED_BARRIER 有效，下一步分析 ISA scratch 組織差異，確認是哪段 scratch sequence 被修正
+- [ ] `CK_TILE_DEBUG_BWD_FORCE_LDS_WAITCNT=0/1`（未實作，優先度低於 GEMM3_SCHED_BARRIER）
+- [ ] 若 GEMM3_SCHED_BARRIER 無效，考慮更強力的 `s_waitcnt vmcnt(0)` inline asm 在 gemm_3 後，或放棄 scheduler 路線改看 VGPR 分配
+- [ ] Next non-probe structural experiment should prefer de-pipelining over semantic rewrites:
+  - do not touch the hot-loop prefetch contract or `SGradT` semantics again without stronger evidence
+  - prefer only narrower live-range / code-shape changes around the already kept conservative baseline
+
+## Grep Set
+
+- [ ] `DK_RETURN_T0|DK_EPI_CAST_T0|DK_ROW_SRC_T0|DK_ROW_DIRECT_T0|DK_ROW_DSTR_T0|DK_ROW_SLOT_T0|DK_ROW_YSEQ_T0|DK_ROW_YVAL_T0|DK_ROW_PATH_T0|DK_ROW_DI_T0|DK_EPI_MODE|DK_HOST_GLOBAL|FLASH_ATTN_CK_BWD_DEBUG|GROUND ZERO|\\[OK\\]|\\[BAD\\]`
+- [x] `analyze_dbg_log.py` must run on the full `run_dbg*.log`, not on `rg`-filtered excerpts:
+  - filtered files can drop non-probe lines needed for correct section/result association
+  - use `rg` only for quick inspection, not as the parser input
+- [x] If the per-section `RESULT` lines and the final digest summary disagree, treat that analysis output as invalid input until the full raw log is re-run through the parser
+- [x] `analyze_dbg_log.py` now supports:
+  - `--brief`
+  - `--seqlen`
+  - `--row-detail`
+  - `--row-compare-a/--row-compare-b`
+  - row-store summaries for `DK_ROW_YSEQ_T0` and `DK_ROW_YVAL_T0`
+  - row-store summaries for `DK_ROW_PATH_T0` and `DK_ROW_DI_T0`
+
+## Decision Rule
+
+- [x] Historical `DK_LOGICAL_PRE/POST` stability at the sampled point means the old sampled lane was clean through store, but that path has now been removed from the active probe set.
+- [x] `DK_HOST_GLOBAL` already splits bad runs, so bug is in unsampled output elements of the same kernel result.
+- [x] Sampled `SGRADT_PRE == SGRADT_POST` means current sampled remap coordinates are not the corruption source.
+- [ ] Since the bad block drifts, sampled `SGRADT` cleanliness does not exonerate the whole remap stage.
+- [x] For `S=1024`, `DK_RETURN_T0` digest stays stable while host `DK_HOST_GLOBAL` drifts.
+- [x] Therefore the current primary suspect moves past sampled return-state `dk_acc`.
+- [x] For `S=1024`, `DK_EPI_CAST_T0` digest also stays stable between `OK/BAD`.
+- [x] Therefore cast-to-output dtype is not the first captured split.
+- [x] For `S=1024`, `DK_EPI_T0` digest diverges between `OK/BAD`.
+- [x] Therefore the current first captured split is inside epilogue store / writeback, after cast and before host-visible tensor summary.
+- [x] For the current repro `Hq == Hk`, host code does not do `sum_out(dk)` merge.
+- [x] Therefore the next check should target kernel-local `dk` epilogue/store, not host-side merge.
+- [x] `DK_EPI_MODE` shows baseline is already on the normal-store path because `kPadM == 0 && kPadN == 0`.
+- [x] Forcing normal-store does not fix the bug; forcing raw-store makes it worse.
+- [x] `CK_TILE_DEBUG_FORCE_ROW_STORE=1` also does not eliminate the bug.
+- [x] `DK_ROW_MAP_T0` stays stable between `S=1024 OK/BAD`, so the first captured split is not in the block-local `(x_global, o_offset)` mapping itself.
+- [x] `DK_ROW_DSTR_T0` now diverges between `S=1024 OK/BAD`, so the per-thread distributed-index / `y_linear` interpretation is back on the critical path.
+- [x] `DK_ROW_YSEQ_T0` also diverges between `S=1024 OK/BAD`, confirming the accessed `y_linear` sequence distribution splits good/bad runs.
+- [x] `DK_ROW_CMP_T0` sampled `operator[]` vs direct reads match, so the split is not explained by `operator[]` alone.
+- [x] `DK_ROW_SRC_T0` already diverges between `S=1024 OK/BAD`.
+- [x] `DK_EPI_CAST_SIG_T0` stays stable between `S=1024 OK/BAD`.
+- [x] Therefore the current earliest captured row-store split is no longer just "source value path":
+  - coarse cast signature is still stable
+  - row-store target mapping is still stable
+  - but row-store access-pattern summaries (`DSTR` / `YSEQ`) already split
+  - sampled `operator[]` vs direct reads do not split on the same `y_linear`
+- [x] Correction: the epilogue-side `DI=(d0,d10,d11,d12)` is **not** the raw inner `CWarpDstr` tuple:
+  - `gemm_3` uses `BlockGemmARegBRegCRegV1`
+  - the final `dk_acc_tile` distribution is `make_embed_tile_distribution_encoding(c_block_outer_dstr_encoding, CWarpDstrEncoding)`
+  - therefore epilogue `distributed_indices` live on the **block-level embedded C distribution**, not on the raw warp-level `CWarpDstr`
+- [x] For the active `BlockGemmARegBRegCRegV1` path, `UseDefaultScheduler == false`:
+  - `BlockGemmProblem` defaults `NumWaveGroups = 1`
+  - the FMHA policy does not override that template parameter for `gemm_3`
+  - therefore the active outer C distribution is the `else` branch in `block_gemm_areg_breg_creg_v1.hpp`
+- [x] Under the active non-default-scheduler transposed-C outer C distribution:
+  - outer `Ys` are `sequence<2,1> / sequence<0,0>`
+  - outer `H` dimensions are:
+    - H1 = `sequence<MIterPerWarp, MWarp>`
+    - H2 = `sequence<NIterPerWarp, NWarp>`
+  - after embedding the inner WMMA transposed-C `CWarpDstr`, the final epilogue `DI` tuple layout becomes:
+    - `d0`  = outer `MIterPerWarp` y-dim
+    - `d10` = outer `NIterPerWarp` y-dim
+    - `d11` = inner WMMA `CM0PerLane` y-dim
+    - `d12` = inner WMMA `CM1PerLane` y-dim
+- [x] Therefore the representative cliff `DI` change `(0,3,0,0) -> (0,1,0,0)` is best interpreted as:
+  - a change in the **outer** block-level `NIterPerWarp` y dimension
+  - not a direct change in raw inner WMMA `CM0PerLane`
+  - this corrects the earlier over-simplified interpretation
+- [x] The concrete active `gemm_3` instance now identifies those outer dimensions numerically:
+  - generated kernel uses `Gemm3BlockWarps = sequence<4,1,1>`
+  - generated kernel uses `Gemm3WarpTile = sequence<16,16,16>`
+- [x] Current source audit lowers the priority of Q/QT content-path theories:
+  - `qt_lds` pre-clear did not help
+  - active Stage 6 `SGradT` remap is a full-block LDS transpose from `gemm_2.C` into the exact `gemm_3.A` block distribution
+  - therefore the better next zone is `dst_reg_tensor` / `SGradTFromGemm2CToGemm3A(...)` / `gemm_3` A-consumption semantics
+  - with `MPerBlock = 64` and `NPerBlock = 64`, this gives:
+    - `MIterPerWarp = 64 / (4 * 16) = 1`
+    - `NIterPerWarp = 64 / (1 * 16) = 4`
+  - therefore the outer y dimension `d10` has the exact legal range `[0,3]`
+  - and the observed cliff change `d10: 3 -> 1` lands precisely on that outer `NIterPerWarp` coordinate
+- [x] The active block-level C y dimensions are now decoded concretely:
+  - `c_iter_idx` for `TransposeC=true` is `sequence<nIter, mIter>`
+  - `c_warp_y_index_zeros` appends the inner warp y zeros after that
+  - after embedding outer and inner C distributions, the final block-level y order is:
+    - `y0 = outer NIterPerWarp`  (`d10`)
+    - `y1 = outer MIterPerWarp`  (`d0`)
+    - `y2 = inner CM0PerLane`    (`d11`)
+    - `y3 = inner CM1PerLane`    (`d12`)
+- [x] The resulting block-level `ys_to_d_descriptor` is a packed unmerge over those y lengths:
+  - lengths are effectively `[4, 1, 8, 1]`
+  - so the packed slot formula collapses to `slot = 8 * d10 + d11`
+  - because `d0` (`MIterPerWarp`) and `d12` (`CM1PerLane`) are degenerate `1`-length dims on the active path
+- [x] Therefore a change in representative `d10` is exactly a change in the outer block-level `nIter` slice:
+  - it directly changes the final thread-buffer slot family before any value-level corruption reasoning
+- [x] The `Q -> shuffled Q LDS -> QT LDS read -> qt_reg_tensor` descriptor chain is compile-time static:
+  - `MakeQDramTileDistribution()` depends only on block shape, head dim, datatype alignment, not runtime `S`
+  - `MakeShuffledQRegWriteBlockDescriptor()` is just `swap_last2` of that static Q distribution
+  - `MakeShuffledQLdsWriteBlockDescriptor()` / `MakeQTLdsReadBlockDescriptor()` only reshape the same full block in LDS
+  - `MakeQTRegSliceBlockDescriptor()` then applies the same outer `(NIterPerWarp, MWarp)` / `KIterPerWarp` slicing rule every run
+  - therefore the `768 -> 769` cliff is not explained by these descriptor builders changing at runtime
+- [x] Current QT-side suspicion shifts from descriptor definition to descriptor **content / timing**:
+  - `qt_reg_tensor` is loaded from `qt_lds_read_window`
+  - the QT LDS region is populated by `shuffle_tile(shuffled_q_block_tile, q_block_tile)` and `store_tile(shuffled_q_lds_write_window, shuffled_q_block_tile)`
+  - because the QT descriptor chain is static, the remaining plausible source is when/what gets written to `qt_lds`
+  - especially around the `768 -> 769` hot-loop/tail boundary
+- [x] Source review of the active `qt_lds` producer/consumer order does **not** show an obvious timing mismatch:
+  - init: prefetch Q, write `q_lds`, shuffle/write `qt_lds`, then `block_sync_lds()`
+  - hot loop: `qt_reg_tensor = load_tile(qt_lds_read_window)` happens **before** the next `q_block_tile` is shuffled/written
+  - hot loop then performs `block_sync_lds()` before rewriting `q_lds/qt_lds`
+  - tail consumes `qt_reg_tensor = load_tile(qt_lds_read_window)` without rewriting `qt_lds`, i.e. it uses the last hot-loop-produced QT tile
+  - this sequence is internally consistent and currently does not look like a simple read-after-write hazard
+- [x] Source review of LDS offsets also does not show an obvious `qt_lds` overlap on the active `dk-only` path:
+  - `kQTOffset = kSharedBaseSize`
+  - `kDSOffset = kQTOffset + kSmemSizeQT + kQTGuardSize` when `kSeparateDKOnlyScratch`
+  - `kBiasOffset = kSharedTailOffset`
+  - so on the active `kDoDK && !kDoDV` path, `qt_lds` is intentionally isolated from `ds_lds`
+  - current evidence does not support a simple QT-vs-DS scratch overwrite explanation
+- [x] Crucial asymmetry in source semantics is now confirmed:
+  - global `load_tile(q_dram_window)` uses `make_buffer_view(..., InvalidElementUseNumericalZeroValue=true)` and therefore returns numerical zero for invalid/OOB elements
+  - but LDS `store_tile(shuffled_q_lds_write_window, shuffled_q_block_tile)` ultimately routes to `buffer_view<address_space_enum::lds>::set(...)`
+  - that LDS `set(...)` checks `if(is_valid_element)` and **skips the write entirely** for invalid/OOB lanes
+  - therefore a partial-tail QT write can legitimately leave old `qt_lds` contents in lanes not overwritten by the current tile
+- [x] This re-elevates a stale-QT-content hypothesis in a more precise form:
+  - not stale data from global Q load OOB lanes
+  - but stale data persisting in `qt_lds` because invalid LDS writes are skipped on partial-tail shuffled-Q stores
+  - this is now a stronger source-level suspect than descriptor mismatch, simple timing mismatch, or simple DS/Bias overlap
+- [x] The temporary `zero_q_oob_rows` experiment is now demoted/removed:
+  - source review proved the default global `load_tile(q_dram_window)` path already zero-fills invalid/OOB elements
+  - the runtime experiment also had no effect on `769 BAD`
+  - therefore explicit Q-tail zeroing is not part of the active hypothesis set
+- [x] Temporary `QBLK_* / QSHUF_* / QTREG_*` probes have served their purpose:
+  - they showed the Q/QT content path does diverge across `768 -> 769`
+  - they are no longer needed on the mainline after the source review moved suspicion away from OOB zero-fill
+- [x] `ys_to_d_descriptor` is built by a single `unmerge` from `[d] -> [y0, y1, ...]`:
+  - `make_adaptor_encoding_for_tile_distribution(...)` computes `y_lengths` directly from `Ys2RHsMajor/Minor`
+  - `make_tensor_descriptor_from_adaptor(...)` then wraps that adaptor as the final `ThreadTensorDesc`
+  - so the y-side slot formula is fully determined by the active `kCTY*` mapping and the resulting `y_lengths`
+- [x] For the active gfx11 WMMA transposed-C base traits:
+  - `kCM0PerLane = 8`
+  - `kCMLane = 2`
+  - `kCM1PerLane = 1`
+  - `kCNLane = 16`
+  - `kCTYs2RHsMajor = sequence<2, 2>`
+  - `kCTYs2RHsMinor = sequence<0, 2>`
+  - therefore the raw WMMA warp-level y lengths are driven by RH(2,0) and RH(2,2), i.e. `CM0PerLane` and `CM1PerLane`
+- [x] Under the active base traits, `CM1PerLane = 1`:
+  - so at the raw WMMA warp level the second y component is degenerate
+  - but at the final epilogue block level the earlier dominant cliff candidate is the outer y dimension `d10 = NIterPerWarp`
+- [x] The commented `FIXATION HERE FOR TRIAL ONLY` block in `warp_gemm_attribute_wmma_impl_base_traits.hpp` is highly suspicious but not yet directly convicted:
+  - it mainly changes `kCTPs2RHssMajor/minor`-side partition mapping
+  - after accounting for outer block-gemm embedding, the current earliest representative cliff is on the outer y-side `NIterPerWarp` dimension
+  - so the trial-fix comment remains an audit target, but the current earliest visible split is still one layer above the raw inner WMMA y mapping
+- [x] Even `row store` did not eliminate the issue:
+  - low-resolution `DK_EPI_T0` can still look stable between `OK/BAD`
+  - higher-resolution `DK_EPI_SIG_T0` already split between `OK/BAD`
+- [x] `DK_ROW_POST_T0` / `DK_ROW_SIG_T0` were removed from the mainline probe set:
+  - they had become low-information aliases of `DK_EPI_T0` / `DK_EPI_SIG_T0`
+  - removing them reduces log volume and code-shape noise without changing the current investigation direction
+- [x] `DK_ROW_MAP_T0` was also removed from the mainline probe set:
+  - it had already served its purpose of ruling out a simple `x_global/o_offset` mapping bug
+  - it no longer added signal relative to the remaining row-store probes
+  - current best boundary is inside the row-store access/value path, not outside it
+- [ ] Primary next work should move one layer above sampled `y_linear` values:
+  - continue code-level trace from WMMA transposed-C `CWarpDstrEncoding`
+  - inspect how `d10/d12` become `y_indices`, and how `ThreadTensorDesc.calculate_offset(y_idx) / PackedSize` folds them into slots
+  - explicitly account for the outer block-gemm embedding around `CWarpDstr`, since the final epilogue sees block-level y dims (`MIterPerWarp`, `NIterPerWarp`) ahead of inner WMMA y dims
+  - current strongest cliff candidate is the outer block-level `NIterPerWarp` y coordinate, not the raw inner WMMA y mapping
+  - keep the earlier `kCT*` trial-fix change under review, but prioritize the QT LDS content/timing path and `NIterPerWarp`-side mapping first
+- [x] Earlier `HOST_ARGMAX_OOB` suspicion was a log-analysis bug:
+  - `analyze_dbg_log.py` had associated each `DK_HOST_GLOBAL` with the following case's `DK_EPI_CTX` / result
+  - after fixing section alignment, `s=1288` correctly belongs to the bad `S=2048` case
+- [ ] If host-side summaries stay identical while final `dk_err` flips, then re-check the test harness / comparison path rather than CK writeback.
