@@ -14,7 +14,8 @@ recursive-include scripts *.py *.sh
 recursive-include assets *.png *.jpg
 
 # Package Python and native sources, including the complete vendored CK and
-# CUTLASS trees.  The code generator needs more than C/C++ headers (Python,
+# CUTLASS source trees plus rocThrust and rocPRIM header trees. The code
+# generator needs more than C/C++ headers (Python,
 # CMake, text templates, and metadata), so extension-only patterns are not a
 # sufficient source-distribution closure.
 graft flash_attn

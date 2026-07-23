@@ -9,7 +9,9 @@
 // Include these 2 headers instead of torch/extension.h since we don't need all of the torch headers.
 #include <torch/python.h>
 #include <torch/nn/functional.h>
-#include <ATen/hip/HIPContext.h>
+// Only stream access is needed; avoid the full context header and its optional
+// BLAS, sparse, and solver SDK header dependencies.
+#include <c10/hip/HIPStream.h>
 #include <c10/hip/HIPGuard.h>
 
 #ifdef OLD_GENERATOR_PATH

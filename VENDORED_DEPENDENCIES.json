@@ -23,6 +23,22 @@
     "layout": "vendored ordinary directory",
     "local_changes": "none at freeze time"
   },
+  "rocthrust": {
+    "source": "https://github.com/ROCm/rocThrust.git",
+    "revision": "rocm-7.2.0",
+    "version": "4.2.0",
+    "layout": "vendored header tree, license, and notices as ordinary files",
+    "local_changes": "generated rocthrust_version.hpp from the upstream CMake template",
+    "source_revision": "ed551d53d9bac8fd55b2a7fc62683946e33060a0"
+  },
+  "rocprim": {
+    "source": "https://github.com/ROCm/rocPRIM.git",
+    "revision": "rocm-7.2.0",
+    "version": "4.2.0",
+    "layout": "vendored header tree, license, and notices as ordinary files",
+    "local_changes": "generated rocprim_version.hpp from the upstream CMake template",
+    "source_revision": "a272f74a01fa2160763122f85ade1b411f407924"
+  },
   "validated_environment": {
     "python": "3.12.7",
     "pytorch": "2.12.0+rocm7.2",

@@ -1,9 +1,10 @@
 # Building the frozen ROCm CK release
 
 This repository is a source-complete snapshot for the RDNA3 `gfx1100` target.
-Composable Kernel (CK) and CUTLASS are ordinary directories under `csrc/`, not
-Git submodules. A clone already contains the native-source build closure: do
-not run `git submodule update`, and no CK/CUTLASS source download is part of a
+Composable Kernel (CK), CUTLASS, rocThrust, and rocPRIM are ordinary
+directories under `csrc/`; they are not Git submodules. A clone already
+contains the native-source build closure: do
+not run `git submodule update`, and no vendored source download is part of a
 build.
 
 The GPU toolchain is deliberately not vendored. Linux, ROCm, a matching
@@ -11,6 +12,10 @@ ROCm-enabled PyTorch installation, Python build tooling, CMake, and Ninja must
 already be available in the build environment. The exact environment used for
 release validation is recorded in `VENDORED_DEPENDENCIES.json`; other
 combinations are not implied to be release-validated.
+
+The rocThrust and rocPRIM headers needed by PyTorch HIP extension compilation are
+included under `csrc/`. A separate system rocThrust or rocPRIM development
+is therefore not required for this frozen build.
 
 ## Quick start
 
@@ -68,7 +73,7 @@ itself is local. The release commands disable remote wheel lookup explicitly.
 
 - `make doctor` checks the Python, PyTorch, ROCm, Ninja, and compiler-facing
   environment without compiling kernels.
-- `make vendor-check` checks the complete frozen CK/CUTLASS file inventory as
+- `make vendor-check` checks the complete frozen vendored file inventory as
   well as required source and license sentinels.
 - `make freeze-check` combines release-tree structural checks.
 - `make build-minimal` builds the small diagnostic kernel closure in place.
@@ -169,11 +174,12 @@ already been provisioned and prevents pip from trying to resolve it again.
 `make sdist` includes:
 
 - FlashAttention Python and native extension sources;
-- the vendored CK and CUTLASS source trees, including code generation inputs;
+- the vendored CK and CUTLASS source trees plus rocThrust and rocPRIM header
+  trees;
 - the exact identity manifest for the full generated `gfx1100` kernel set;
-- `VENDORED_FILES.txt`, the complete CK/CUTLASS path inventory checked against
+- `VENDORED_FILES.txt`, the complete vendored path inventory checked against
   the unpacked archive;
-- the root, CK, and CUTLASS license/notice files;
+- the root and all four vendored dependency license/notice files;
 - release provenance and compact validation documentation; and
 - the release helper scripts and tests used by the stable targets.
 

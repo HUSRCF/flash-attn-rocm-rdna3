@@ -2,10 +2,11 @@
 
 ## Frozen RDNA3 / ROCm CK source snapshot
 
-This repository snapshot carries its required Composable Kernel and CUTLASS
-sources directly under `csrc/`; it has no Git submodule setup step and does not
-download source dependencies while building. ROCm, a matching ROCm-enabled
-PyTorch installation, and the Python build tools remain external prerequisites.
+This repository snapshot carries its required Composable Kernel, CUTLASS,
+rocThrust, and rocPRIM sources directly under `csrc/`; it has no Git submodule
+setup step and does not download source dependencies while building. ROCm, a
+matching ROCm-enabled PyTorch installation, and the Python build tools remain
+external prerequisites.
 
 For the validated `gfx1100` path, start with:
 

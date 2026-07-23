@@ -590,6 +590,14 @@ def validate_vendored_sources():
         "warp_wmma_gemm_gfx11_utils.hpp",
         "csrc/cutlass/LICENSE.txt",
         "csrc/cutlass/include/cutlass/cutlass.h",
+        "csrc/rocthrust/LICENSE",
+        "csrc/rocthrust/NOTICES.txt",
+        "csrc/rocthrust/thrust/complex.h",
+        "csrc/rocthrust/thrust/rocthrust_version.hpp",
+        "csrc/rocprim/LICENSE.md",
+        "csrc/rocprim/NOTICES.txt",
+        "csrc/rocprim/include/rocprim/config.hpp",
+        "csrc/rocprim/include/rocprim/rocprim_version.hpp",
         "csrc/flash_attn_ck/generated_sources_gfx1100.txt",
     )
     inventory_path = Path(this_dir) / "VENDORED_FILES.txt"
@@ -598,14 +606,20 @@ def validate_vendored_sources():
         if inventory_path.is_file()
         else []
     )
-    valid_prefixes = ("csrc/composable_kernel/", "csrc/cutlass/")
+    valid_prefixes = (
+        "csrc/composable_kernel/",
+        "csrc/cutlass/",
+        "csrc/rocthrust/",
+        "csrc/rocprim/",
+    )
     if (
         not inventory
         or inventory != sorted(set(inventory))
         or any(not path.startswith(valid_prefixes) for path in inventory)
     ):
         raise RuntimeError(
-            "VENDORED_FILES.txt must be a non-empty, sorted, unique CK/CUTLASS inventory"
+            "VENDORED_FILES.txt must be a non-empty, sorted, unique inventory "
+            "of CK, CUTLASS, rocThrust, and rocPRIM"
         )
 
     missing = [
@@ -629,8 +643,8 @@ def validate_vendored_sources():
 cmdclass = {}
 ext_modules = []
 
-# The frozen repository vendors CK and CUTLASS as ordinary files.  Validate the
-# closure regardless of whether the source came from Git, an sdist, or a copy.
+# The frozen repository vendors CK, CUTLASS, rocThrust, and rocPRIM as ordinary
+# files. Validate the closure for Git clones, source archives, and copies.
 validate_vendored_sources()
 
 if not SKIP_CUDA_BUILD and not IS_ROCM:
@@ -1622,6 +1636,8 @@ elif not SKIP_CUDA_BUILD and IS_ROCM:
             Path(this_dir) / "csrc" / "composable_kernel" / "include",
             Path(this_dir) / "csrc" / "composable_kernel" / "library" / "include",
             Path(this_dir) / "csrc" / "composable_kernel" / "example" / "ck_tile" / "01_fmha",
+            Path(this_dir) / "csrc" / "rocthrust",
+            Path(this_dir) / "csrc" / "rocprim" / "include",
         ]
 
         ext_modules.append(

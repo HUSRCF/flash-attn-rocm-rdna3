@@ -49,6 +49,14 @@ VENDOR_SENTINELS := \
 	csrc/composable_kernel/LICENSE \
 	csrc/cutlass/include/cutlass/cutlass.h \
 	csrc/cutlass/LICENSE.txt \
+	csrc/rocthrust/thrust/complex.h \
+	csrc/rocthrust/thrust/rocthrust_version.hpp \
+	csrc/rocthrust/LICENSE \
+	csrc/rocthrust/NOTICES.txt \
+	csrc/rocprim/include/rocprim/config.hpp \
+	csrc/rocprim/include/rocprim/rocprim_version.hpp \
+	csrc/rocprim/LICENSE.md \
+	csrc/rocprim/NOTICES.txt \
 	csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp \
 	csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dq_pipeline_kr_ktr_vr_iglp.hpp \
 	csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dq_qmajor_pipeline_kr_ktr_vr_iglp.hpp \
@@ -76,7 +84,7 @@ help:
 		'' \
 		'Targets:' \
 		'  doctor        Check the local ROCm/Python build toolchain.' \
-		'  vendor-check  Check required vendored CK and CUTLASS source files.' \
+		'  vendor-check  Check the complete vendored source/header closure.' \
 		'  freeze-check  Check provenance plus the no-submodule Git layout.' \
 		'  build-minimal Build an in-place standard D64/FP16 debug closure.' \
 		'  build-full    Build the complete in-place gfx1100 release extension.' \
@@ -111,15 +119,15 @@ vendor-check:
 	@for path in $(VENDOR_SENTINELS); do \
 		test -f "$$path" || { echo "ERROR: frozen source is incomplete; missing $$path" >&2; exit 1; }; \
 	done
-	@$(PYTHON) -c 'from pathlib import Path; inventory=Path("VENDORED_FILES.txt").read_text(encoding="utf-8").splitlines(); assert inventory and inventory == sorted(set(inventory)), "invalid vendored file inventory"; assert all(path.startswith(("csrc/composable_kernel/", "csrc/cutlass/")) for path in inventory), "invalid vendored path"; missing=[path for path in inventory if not Path(path).is_file()]; assert not missing, f"vendored inventory files missing: {len(missing)}"; print(f"Vendored file inventory: {len(inventory)} files")'
-	@echo 'Vendored CK/CUTLASS source closure: OK'
+	@$(PYTHON) -c 'from pathlib import Path; inventory=Path("VENDORED_FILES.txt").read_text(encoding="utf-8").splitlines(); assert inventory and inventory == sorted(set(inventory)), "invalid vendored file inventory"; prefixes=("csrc/composable_kernel/", "csrc/cutlass/", "csrc/rocthrust/", "csrc/rocprim/"); assert all(path.startswith(prefixes) for path in inventory), "invalid vendored path"; missing=[path for path in inventory if not Path(path).is_file()]; assert not missing, f"vendored inventory files missing: {len(missing)}"; print(f"Vendored file inventory: {len(inventory)} files")'
+	@echo 'Vendored CK/CUTLASS/rocThrust/rocPRIM closure: OK'
 
 freeze-check: vendor-check
-	@$(PYTHON) -c 'import json; data=json.load(open("VENDORED_DEPENDENCIES.json", encoding="utf-8")); required={"schema_version", "snapshot", "target", "flash_attention", "composable_kernel", "cutlass", "validated_environment", "validated_artifact", "vendored_file_inventory", "validation_report"}; missing=sorted(required-data.keys()); assert not missing, "missing provenance keys: " + ", ".join(missing); print("Vendored provenance manifest: OK")'
+	@$(PYTHON) -c 'import json; data=json.load(open("VENDORED_DEPENDENCIES.json", encoding="utf-8")); required={"schema_version", "snapshot", "target", "flash_attention", "composable_kernel", "cutlass", "rocthrust", "rocprim", "validated_environment", "validated_artifact", "vendored_file_inventory", "validation_report"}; missing=sorted(required-data.keys()); assert not missing, "missing provenance keys: " + ", ".join(missing); print("Vendored provenance manifest: OK")'
 	@if test -e .gitmodules; then \
 		echo 'ERROR: root .gitmodules is forbidden in the frozen repository' >&2; exit 1; \
 	fi
-	@nested="$$(find csrc/composable_kernel csrc/cutlass -mindepth 1 \( -name .git -o -name .gitmodules \) -print -quit)"; \
+	@nested="$$(find csrc/composable_kernel csrc/cutlass csrc/rocthrust csrc/rocprim -mindepth 1 \( -name .git -o -name .gitmodules \) -print -quit)"; \
 	if test -n "$$nested"; then \
 		echo "ERROR: nested Git metadata is forbidden: $$nested" >&2; exit 1; \
 	fi
@@ -138,7 +146,7 @@ freeze-check: vendor-check
 			}; \
 		done; \
 	fi
-	@$(PYTHON) -c 'from pathlib import Path; import subprocess; inventory=Path("VENDORED_FILES.txt").read_text(encoding="utf-8").splitlines(); tracked=subprocess.check_output(["git", "ls-files", "csrc/composable_kernel", "csrc/cutlass"], text=True).splitlines() if Path(".git").exists() else inventory; assert tracked == inventory, "VENDORED_FILES.txt differs from the tracked CK/CUTLASS file set"'
+	@$(PYTHON) -c 'from pathlib import Path; import subprocess; inventory=Path("VENDORED_FILES.txt").read_text(encoding="utf-8").splitlines(); tracked=subprocess.check_output(["git", "ls-files", "csrc/composable_kernel", "csrc/cutlass", "csrc/rocthrust", "csrc/rocprim"], text=True).splitlines() if Path(".git").exists() else inventory; assert tracked == inventory, "VENDORED_FILES.txt differs from the tracked vendored file set"'
 	@echo 'Frozen repository layout: OK'
 
 build-minimal: doctor freeze-check
@@ -223,10 +231,10 @@ verify-sdist: sdist
 		test -f "$$src/$$path" || { echo "ERROR: sdist is missing $$path" >&2; exit 1; }; \
 	done; \
 	test ! -e "$$src/.gitmodules" || { echo 'ERROR: sdist contains .gitmodules' >&2; exit 1; }; \
-	nested="$$(find "$$src/csrc/composable_kernel" "$$src/csrc/cutlass" -mindepth 1 \( -name .git -o -name .gitmodules \) -print -quit)"; \
+	nested="$$(find "$$src/csrc/composable_kernel" "$$src/csrc/cutlass" "$$src/csrc/rocthrust" "$$src/csrc/rocprim" -mindepth 1 \( -name .git -o -name .gitmodules \) -print -quit)"; \
 	test -z "$$nested" || { echo "ERROR: sdist contains nested Git metadata: $$nested" >&2; exit 1; }; \
 	python_bin="$$($(PYTHON) -c 'import sys; print(sys.executable)')"; \
-	"$$python_bin" -c 'import json, pathlib, sys; root=pathlib.Path(sys.argv[1]); json.load((root / "VENDORED_DEPENDENCIES.json").open(encoding="utf-8")); expected=(root / "VENDORED_FILES.txt").read_text(encoding="utf-8").splitlines(); actual=sorted(str(path.relative_to(root)) for base in ("csrc/composable_kernel", "csrc/cutlass") for path in (root / base).rglob("*") if path.is_file()); missing=set(expected)-set(actual); unexpected=set(actual)-set(expected); assert not missing and not unexpected, f"sdist vendor inventory mismatch: missing={len(missing)}, unexpected={len(unexpected)}"' "$$src"; \
+	"$$python_bin" -c 'import json, pathlib, sys; root=pathlib.Path(sys.argv[1]); json.load((root / "VENDORED_DEPENDENCIES.json").open(encoding="utf-8")); expected=(root / "VENDORED_FILES.txt").read_text(encoding="utf-8").splitlines(); actual=sorted(str(path.relative_to(root)) for base in ("csrc/composable_kernel", "csrc/cutlass", "csrc/rocthrust", "csrc/rocprim") for path in (root / base).rglob("*") if path.is_file()); missing=set(expected)-set(actual); unexpected=set(actual)-set(expected); assert not missing and not unexpected, f"sdist vendor inventory mismatch: missing={len(missing)}, unexpected={len(unexpected)}"' "$$src"; \
 	(cd "$$src" && \
 		$(RELEASE_ENV) \
 			FLASH_ATTN_CK_MINIMAL_DEBUG='FALSE' \

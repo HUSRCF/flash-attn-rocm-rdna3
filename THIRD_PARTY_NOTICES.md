@@ -17,4 +17,26 @@ This source release is a frozen monorepo. It does not require Git submodules or 
 - License: BSD-3-Clause; see `csrc/cutlass/LICENSE.txt`.
 - Additional files under the vendored tree retain their own license notices.
 
-System ROCm, a compatible ROCm PyTorch installation, Python build tools, and Ninja remain environment dependencies; they are not vendored into this repository.
+## rocThrust
+
+- Upstream: https://github.com/ROCm/rocThrust.git
+- Frozen release tag and version: recorded in `VENDORED_DEPENDENCIES.json`.
+- Local state: complete header tree plus the generated version header under
+  `csrc/rocthrust`.
+- License: Apache-2.0; see `csrc/rocthrust/LICENSE`.
+- Bundled third-party notices and additional licenses: see
+  `csrc/rocthrust/NOTICES.txt`; individual headers retain their notices.
+
+## rocPRIM
+
+- Upstream: https://github.com/ROCm/rocPRIM.git
+- Frozen release tag and version: recorded in `VENDORED_DEPENDENCIES.json`.
+- Local state: complete public header tree plus the generated version header
+  under `csrc/rocprim`.
+- License: MIT; see `csrc/rocprim/LICENSE.md`.
+- Bundled third-party notices and additional licenses: see
+  `csrc/rocprim/NOTICES.txt`; individual headers retain their notices.
+
+System ROCm, a compatible ROCm PyTorch installation, Python build tools, and
+Ninja remain environment dependencies; they are not vendored into this
+repository.
