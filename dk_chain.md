@@ -6,8 +6,8 @@
 
 PyTorch 扩展把 backward 入口导出成 `flash_attn_2_cuda.bwd`：
 
-- [flash_api.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/flash_api.cpp#L49)
-- [flash_api.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/flash_api.cpp#L117)
+- [flash_api.cpp](csrc/flash_attn_ck/flash_api.cpp)
+- [flash_api.cpp](csrc/flash_attn_ck/flash_api.cpp)
 
 关键点：
 
@@ -25,7 +25,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 
 真正的 host 侧 backward 实现在：
 
-- [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp#L350)
+- [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)
 
 这里完成：
 
@@ -39,11 +39,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 
 关键段落：
 
-- [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp#L404)
-- [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp#L443)
-- [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp#L501)
-- [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp#L551)
-- [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp#L589)
+- [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)
+- [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)
+- [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)
+- [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)
+- [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)
 
 核心代码：
 
@@ -67,11 +67,11 @@ float t = fmha_bwd(traits, args, stream_config);
 
 traits:
 
-- [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp#L160)
+- [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)
 
 args:
 
-- [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp#L179)
+- [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)
 
 `get_ck_fmha_bwd_args(...)` 把这些东西传进 CK kernel：
 
@@ -88,7 +88,7 @@ args:
 
 CK backward kernel 壳子在：
 
-- [fmha_bwd_kernel.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
+- [fmha_bwd_kernel.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
 
 这个 kernel 干的事是：
 
@@ -98,10 +98,10 @@ CK backward kernel 壳子在：
 
 最关键的一段：
 
-- [fmha_bwd_kernel.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp#L1366)
-- [fmha_bwd_kernel.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp#L1382)
-- [fmha_bwd_kernel.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp#L1384)
-- [fmha_bwd_kernel.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp#L1386)
+- [fmha_bwd_kernel.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
+- [fmha_bwd_kernel.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
+- [fmha_bwd_kernel.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
+- [fmha_bwd_kernel.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
 
 ```cpp
 const auto dk_origin = dk_dram_window.get_window_origin();
@@ -123,10 +123,10 @@ dump_logical_post("DK_LOGICAL_POST", dk_ptr, kargs.stride_dk,
 
 定义位置：
 
-- [fmha_bwd_kernel.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp#L20)
-- [fmha_bwd_kernel.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp#L43)
-- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp#L14)
-- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp#L41)
+- [fmha_bwd_kernel.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
+- [fmha_bwd_kernel.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
+- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
+- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
 
 ```cpp
 #define CK_TILE_DEBUG_BWD_TARGET_BLOCK_X 4
@@ -140,12 +140,12 @@ dump_logical_post("DK_LOGICAL_POST", dk_ptr, kargs.stride_dk,
 
 当前这条 repro 的 `dK` 主体来自 IGLP pipeline：
 
-- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
+- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
 
 ### 6.1 `dk_acc` 初始化
 
-- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp#L533)
-- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp#L700)
+- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
+- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
 
 ```cpp
 auto dk_acc = [&]() {
@@ -162,9 +162,9 @@ clear_tile(dk_acc);
 
 `dK = dS^T @ Q^T` 发生在 Stage 6，也就是 `gemm_3(...)`：
 
-- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp#L1271)
-- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp#L1282)
-- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp#L1299)
+- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
+- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
+- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
 
 ```cpp
 // STAGE 6, SGrad^T@Q^T Gemm3
@@ -185,7 +185,7 @@ gemm_3(dk_acc, dst_reg_tensor, qt_reg_tensor);
 
 `SGradTFromGemm2CToGemm3A(...)` 的真源在：
 
-- [block_fmha_bwd_pipeline_default_policy.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_pipeline_default_policy.hpp#L2638)
+- [block_fmha_bwd_pipeline_default_policy.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_pipeline_default_policy.hpp)
 
 这一步不是单纯“优化一下搬运方式”，而是把 `gemm_2.C` 的布局转换成 `gemm_3.A` 需要的布局。
 
@@ -237,8 +237,8 @@ if constexpr(kUseLdsRemap) {
 
 loop 结束后，`dk_acc` 还会乘 scale：
 
-- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp#L1325)
-- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp#L1336)
+- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
+- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
 
 无 dropout 时走：
 
@@ -257,9 +257,9 @@ tile_elementwise_inout(
 
 pipeline 返回 `dk_acc`：
 
-- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp#L1348)
-- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp#L1359)
-- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp#L1363)
+- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
+- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
+- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
 
 ```cpp
 printf("[DK_RETURN_CTX] ...");
@@ -274,7 +274,7 @@ return make_tuple(dk_acc, dv_acc);
 
 pipeline 返回的 `dk_acc_tile` 在 kernel 壳子里被写入 global `dk_ptr`：
 
-- [fmha_bwd_kernel.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp#L1384)
+- [fmha_bwd_kernel.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
 
 ```cpp
 KGradEpiloguePipeline{}(dk_dram_window, dk_acc_tile, nullptr);
@@ -294,8 +294,8 @@ KGradEpiloguePipeline{}(dk_dram_window, dk_acc_tile, nullptr);
 
 kernel 返回以后，host 现在会强制同步并打印整张 `dk_expanded` 的摘要：
 
-- [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp#L72)
-- [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp#L592)
+- [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)
+- [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)
 
 ```cpp
 TORCH_CHECK(cudaStreamSynchronize(stream) == cudaSuccess, ...);
@@ -325,9 +325,9 @@ dump_dk_host_stats(dk_expanded, batch_size, seqlen_k, num_heads, head_size);
 
 如果你只想快速审 `dK`，建议按这个顺序看：
 
-1. [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp#L551)
-2. [fmha_bwd_kernel.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp#L1366)
-3. [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp#L1271)
-4. [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp#L1336)
-5. [fmha_bwd_kernel.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp#L1384)
-6. [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp#L592)
+1. [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)
+2. [fmha_bwd_kernel.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
+3. [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
+4. [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
+5. [fmha_bwd_kernel.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
+6. [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)

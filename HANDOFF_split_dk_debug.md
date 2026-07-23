@@ -34,8 +34,8 @@
 
 对应代码:
 
-- [fmha_bwd_kernel.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
-- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
+- [fmha_bwd_kernel.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
+- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
 
 ### 2.2 `S=1024` 的 good/bad 在 return 前指纹一致
 
@@ -66,7 +66,7 @@ Host 侧 probe:
 
 对应代码:
 
-- [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp)
+- [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)
 
 ### 2.4 当前 repro 不走 host 侧 `sum_out(dk)` merge
 
@@ -82,7 +82,7 @@ Host 侧 probe:
 
 对应代码:
 
-- [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp#L629)
+- [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)
 
 ## 3. 已排除或基本排除的方向
 
@@ -153,7 +153,7 @@ Host 侧 probe:
 
 文件:
 
-- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
+- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
 
 保留:
 
@@ -169,7 +169,7 @@ Host 侧 probe:
 
 文件:
 
-- [fmha_bwd_kernel.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
+- [fmha_bwd_kernel.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
 
 保留:
 
@@ -202,7 +202,7 @@ Host 侧 probe:
 
 文件:
 
-- [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp)
+- [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)
 
 保留:
 
@@ -258,14 +258,14 @@ Host 侧 probe:
 
 相关文件:
 
-- [safe_rdna3_chunked_bwd.py](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/safe_rdna3_chunked_bwd.py)
-- [test_ck_tile_probe_chunked.py](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/test_ck_tile_probe_chunked.py)
+- [safe_rdna3_chunked_bwd.py](safe_rdna3_chunked_bwd.py)
+- [test_ck_tile_probe_chunked.py](test_ck_tile_probe_chunked.py)
 
 ## 6. 日志分析脚本现状
 
 文件:
 
-- [analyze_dbg_log.py](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/analyze_dbg_log.py)
+- [analyze_dbg_log.py](analyze_dbg_log.py)
 
 当前功能:
 
@@ -403,7 +403,7 @@ python analyze_dbg_log.py run_dbg_kname.log
 
 对应源码：
 
-- [default_2d_epilogue.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/epilogue/default_2d_epilogue.hpp#L720)
+- [default_2d_epilogue.hpp](csrc/composable_kernel/include/ck_tile/ops/epilogue/default_2d_epilogue.hpp)
 
 辅助日志 tag：
 
@@ -425,12 +425,12 @@ python analyze_dbg_log.py run_dbg_kname.log
 
 本次已修改的关键真源码:
 
-- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
-- [block_fmha_bwd_dq_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dq_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
-- [fmha_bwd_kernel.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
-- [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp)
-- [analyze_dbg_log.py](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/analyze_dbg_log.py)
-- [todo.md](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/todo.md)
+- [block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
+- [block_fmha_bwd_dq_dk_dv_pipeline_kr_ktr_vr_iglp.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dq_dk_dv_pipeline_kr_ktr_vr_iglp.hpp)
+- [fmha_bwd_kernel.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/kernel/fmha_bwd_kernel.hpp)
+- [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)
+- [analyze_dbg_log.py](analyze_dbg_log.py)
+- [todo.md](todo.md)
 
 ## 11. 建议的最短接手流程
 
@@ -455,10 +455,10 @@ python analyze_dbg_log.py run_dbg_kname.log
 
 为当前排障准备的文件:
 
-- [todo.md](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/todo.md)
-- [dk_chain.md](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/dk_chain.md)
-- [analyze_dbg_log.py](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/analyze_dbg_log.py)
-- [HANDOFF_split_dk_debug.md](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/HANDOFF_split_dk_debug.md)
+- [todo.md](todo.md)
+- [dk_chain.md](dk_chain.md)
+- [analyze_dbg_log.py](analyze_dbg_log.py)
+- [HANDOFF_split_dk_debug.md](HANDOFF_split_dk_debug.md)
 
 ## 13. 一句话交接结论
 

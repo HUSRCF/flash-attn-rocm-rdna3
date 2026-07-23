@@ -14,8 +14,8 @@ BWD 主路径里至少有下面几段：
 
 关键文件：
 
-- [block_fmha_bwd_dq_dk_dv_pipeline_kr_ktr_vr.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dq_dk_dv_pipeline_kr_ktr_vr.hpp)
-- [block_fmha_bwd_dq_dk_dv_pipeline_trload_kr_ktr_vr.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dq_dk_dv_pipeline_trload_kr_ktr_vr.hpp)
+- [block_fmha_bwd_dq_dk_dv_pipeline_kr_ktr_vr.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dq_dk_dv_pipeline_kr_ktr_vr.hpp)
+- [block_fmha_bwd_dq_dk_dv_pipeline_trload_kr_ktr_vr.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dq_dk_dv_pipeline_trload_kr_ktr_vr.hpp)
 
 硬约束：
 
@@ -39,8 +39,8 @@ BWD 主路径里至少有下面几段：
 
 关键文件：
 
-- [block_fmha_bwd_pipeline_default_policy.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_pipeline_default_policy.hpp)
-- [block_fmha_bwd_dq_dk_dv_pipeline_kr_ktr_vr.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dq_dk_dv_pipeline_kr_ktr_vr.hpp)
+- [block_fmha_bwd_pipeline_default_policy.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_pipeline_default_policy.hpp)
+- [block_fmha_bwd_dq_dk_dv_pipeline_kr_ktr_vr.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dq_dk_dv_pipeline_kr_ktr_vr.hpp)
 
 经验结论：
 
@@ -60,8 +60,8 @@ BWD 主路径里至少有下面几段：
 
 这些约束位于：
 
-- [block_fmha_bwd_pipeline_default_policy.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_pipeline_default_policy.hpp#L1933)
-- [block_fmha_bwd_pipeline_default_policy.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_pipeline_default_policy.hpp#L2592)
+- [block_fmha_bwd_pipeline_default_policy.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_pipeline_default_policy.hpp)
+- [block_fmha_bwd_pipeline_default_policy.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_pipeline_default_policy.hpp)
 
 含义：
 
@@ -82,9 +82,9 @@ BWD 主路径里至少有下面几段：
 
 关键文件：
 
-- [warp_gemm_attribute_wmma_impl_base_traits.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/gemm/warp/warp_gemm_attribute_wmma_impl_base_traits.hpp)
-- [block_fmha_bwd_pipeline_default_policy.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_pipeline_default_policy.hpp#L1949)
-- [block_fmha_bwd_pipeline_default_policy.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_pipeline_default_policy.hpp#L2614)
+- [warp_gemm_attribute_wmma_impl_base_traits.hpp](csrc/composable_kernel/include/ck_tile/ops/gemm/warp/warp_gemm_attribute_wmma_impl_base_traits.hpp)
+- [block_fmha_bwd_pipeline_default_policy.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_pipeline_default_policy.hpp)
+- [block_fmha_bwd_pipeline_default_policy.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_pipeline_default_policy.hpp)
 
 含义：
 
@@ -98,10 +98,10 @@ BWD 主路径里至少有下面几段：
 
 关键文件：
 
-- [block_fmha_bwd_dq_dk_dv_pipeline_kr_ktr_vr.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dq_dk_dv_pipeline_kr_ktr_vr.hpp#L79)
-- [block_fmha_bwd_dq_dk_dv_pipeline_trload_kr_ktr_vr.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dq_dk_dv_pipeline_trload_kr_ktr_vr.hpp#L79)
-- [block_fmha_bwd_pipeline_default_policy.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_pipeline_default_policy.hpp#L1969)
-- [block_fmha_bwd_pipeline_default_policy.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_pipeline_default_policy.hpp#L2626)
+- [block_fmha_bwd_dq_dk_dv_pipeline_kr_ktr_vr.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dq_dk_dv_pipeline_kr_ktr_vr.hpp)
+- [block_fmha_bwd_dq_dk_dv_pipeline_trload_kr_ktr_vr.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dq_dk_dv_pipeline_trload_kr_ktr_vr.hpp)
+- [block_fmha_bwd_pipeline_default_policy.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_pipeline_default_policy.hpp)
+- [block_fmha_bwd_pipeline_default_policy.hpp](csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_pipeline_default_policy.hpp)
 
 需要满足：
 
@@ -122,8 +122,8 @@ BWD 主路径里至少有下面几段：
 
 当前仓库已经在 wrapper 侧加了两个专门给 CK BWD 用的调试开关，位置：
 
-- [mha_bwd.cpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.cpp)
-- [mha_bwd.hip](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/flash_attn_ck/mha_bwd.hip)
+- [mha_bwd.cpp](csrc/flash_attn_ck/mha_bwd.cpp)
+- [mha_bwd.hip](csrc/flash_attn_ck/mha_bwd.hip)
 
 调试开关：
 
@@ -141,7 +141,7 @@ BWD 主路径里至少有下面几段：
 - 先跑 `2048` 坏，再回测 `1024` 也坏
   如果打开 poison 后 `1024` 直接出现 `NaN`，这通常不是同步问题，而是上一次长序列把某些输出块留成了未定义值，随后被 allocator 复用放大了。
 
-- [block_gemm_areg_bsmem_creg_v2.hpp](/home/husrcf/Code/ProtBind/fa4/flash-attention-fa4-v4.0.0.beta4_20260319c/csrc/composable_kernel/include/ck_tile/ops/gemm/block/block_gemm_areg_bsmem_creg_v2.hpp)
+- [block_gemm_areg_bsmem_creg_v2.hpp](csrc/composable_kernel/include/ck_tile/ops/gemm/block/block_gemm_areg_bsmem_creg_v2.hpp)
 
 已经把：
 
