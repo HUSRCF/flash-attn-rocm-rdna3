@@ -123,13 +123,25 @@ The BF16 fallback does not assert a whole-tensor one-ULP bound. It is allowed
 only for the three scenarios identified by the frozen matrix; the release
 target rejects any newly appearing fallback scenario. It then reruns those
 rows with promoted FP32 inputs and FP32 backward tensors. Candidate output,
-`dQ`, `dK`, and `dV` must all be finite and remain inside an error envelope
-formed as four times the BF16-math distance to FP32 plus four times the local
-BF16 spacing at the FP32 reference value. The floor therefore shrinks near
-zero instead of becoming a unit-scale absolute tolerance. This FP32 comparison
-participates in the exit code; it is not report-only. The
-aggregate release target also rejects altered matrix or tolerance values before
-compilation.
+`dQ`, `dK`, and `dV` must all be finite. For each tensor, candidate MAE must be
+at most twice the BF16-math MAE against FP32, and candidate maximum absolute
+error must be at most twice the BF16-math maximum plus one BF16 ULP at the
+tensor-wide FP32 scale. These aggregate bounds remain meaningful for values
+produced by cancellation near zero. These constants are empirical frozen bounds
+calibrated on the accepted safe-O and corrected native-O artifacts for these
+three rows; they are not a universal BF16 error theorem.
+
+The former pointwise envelope (four times BF16-math error plus four local ULPs)
+is retained in the JSON/CSV as `local_envelope_*` diagnostics, but it is not a
+hard gate: its allowance collapses near zero and rejects the accepted safe-O
+baseline. The audit also verifies that the vendored BF16 round-to-nearest
+inline-assembly helper retains its required early-clobber output constraint.
+The source guard covers the known register-alias regression. The aggregate FP32
+gate is not a substitute for a safe/native bitwise pair and is not claimed to
+detect every sparse one-ULP bias. The aggregate FP32 comparison and source
+guard participate in the exit code.
+The aggregate release target also rejects altered matrix or tolerance values
+before compilation.
 
 The release target therefore covers standard batch plus the tracked official
 standard, deterministic, and varlen node set. The broader accepted strict

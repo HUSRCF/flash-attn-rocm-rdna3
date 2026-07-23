@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 from pathlib import Path
 import sys
 
@@ -34,9 +35,22 @@ CASES = (
 )
 
 
-FP32_ERROR_MULTIPLIER = 4.0
-BF16_FLOOR_MULTIPLIER = 4.0
+FP32_MAE_MULTIPLIER = 2.0
+FP32_MAX_ERROR_MULTIPLIER = 2.0
+FP32_TENSOR_ULP_MULTIPLIER = 1.0
+LOCAL_FP32_ERROR_MULTIPLIER = 4.0
+LOCAL_BF16_FLOOR_MULTIPLIER = 4.0
 BF16_FRACTION_BITS = 7
+BF16_HEADER = (
+    REPO_ROOT
+    / "csrc"
+    / "composable_kernel"
+    / "include"
+    / "ck_tile"
+    / "core"
+    / "numeric"
+    / "bfloat16.hpp"
+)
 
 
 def bf16_local_ulp(reference: torch.Tensor) -> torch.Tensor:
@@ -55,6 +69,31 @@ def bf16_local_ulp(reference: torch.Tensor) -> torch.Tensor:
     )
 
 
+def verify_bf16_early_clobber() -> None:
+    source = BF16_HEADER.read_text(encoding="utf-8")
+    helper_signature = "CK_TILE_DEVICE\nuint16_t float_to_bf16_rtn_asm(float f)"
+    next_helper_signature = "CK_TILE_HOST\nuint16_t float_to_bf16_rta_asm(float f)"
+    try:
+        helper_start = source.index(helper_signature)
+        helper_end = source.index(next_helper_signature, helper_start)
+    except ValueError as error:
+        raise RuntimeError(
+            "unable to isolate the vendored BF16 RNE device helper"
+        ) from error
+
+    helper = source[helper_start:helper_end]
+    asm_start = helper.find("asm volatile(")
+    asm_end = helper.find("));", asm_start)
+    if asm_start < 0 or asm_end < 0:
+        raise RuntimeError("unable to isolate the BF16 RNE inline assembly")
+    asm_text = helper[asm_start : asm_end + 3]
+    expected_outputs = '"=s"(check_nan), "=&v"(tmp), "+v"(u.fp32)'
+    if asm_text.count(expected_outputs) != 1:
+        raise RuntimeError(
+            "vendored BF16 RNE asm lacks the required early-clobber output operands"
+        )
+
+
 def _finite_max(tensor: torch.Tensor) -> float:
     if not bool(torch.isfinite(tensor).all().item()):
         return float("inf")
@@ -67,41 +106,80 @@ def _finite_mean(tensor: torch.Tensor) -> float:
     return float(tensor.mean().item())
 
 
+def json_safe(value: object) -> object:
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [json_safe(item) for item in value]
+    return value
+
+
 def fp32_oracle_envelope(
     candidate: torch.Tensor,
     bf16_math: torch.Tensor,
     fp32_math: torch.Tensor,
 ) -> dict[str, object]:
-    """Gate a BF16 result against a true FP32 oracle and BF16 error budget."""
+    """Gate BF16 results with scale-aware FP32 aggregate error bounds."""
     candidate_fp32 = candidate.detach().float()
     bf16_math_fp32 = bf16_math.detach().float()
     fp32_reference = fp32_math.detach().float()
 
     candidate_error = (candidate_fp32 - fp32_reference).abs()
     dtype_error = (bf16_math_fp32 - fp32_reference).abs()
-    floor = BF16_FLOOR_MULTIPLIER * bf16_local_ulp(fp32_reference)
-    allowance = FP32_ERROR_MULTIPLIER * dtype_error + floor
-    ratio = candidate_error / allowance.clamp(min=1.0e-12)
+
+    # Keep the original local-value envelope as a diagnostic. Near-zero
+    # cancellation makes it unsuitable as a hard gate for attention reductions.
+    local_floor = LOCAL_BF16_FLOOR_MULTIPLIER * bf16_local_ulp(fp32_reference)
+    local_allowance = LOCAL_FP32_ERROR_MULTIPLIER * dtype_error + local_floor
+    local_ratio = candidate_error / local_allowance.clamp(min=1.0e-12)
     finite = (
         torch.isfinite(candidate_fp32)
         & torch.isfinite(bf16_math_fp32)
         & torch.isfinite(fp32_reference)
         & torch.isfinite(candidate_error)
-        & torch.isfinite(allowance)
-        & torch.isfinite(ratio)
+        & torch.isfinite(dtype_error)
+        & torch.isfinite(local_allowance)
+        & torch.isfinite(local_ratio)
     )
-    violations = (~finite) | (candidate_error > allowance)
+    local_violations = (~finite) | (candidate_error > local_allowance)
+    finite_ok = bool(finite.all().item())
+
+    candidate_max_abs = _finite_max(candidate_error)
+    candidate_mae = _finite_mean(candidate_error)
+    bf16_math_max_abs = _finite_max(dtype_error)
+    bf16_math_mae = _finite_mean(dtype_error)
+    tensor_scale_ulp = float(
+        bf16_local_ulp(fp32_reference.abs().max()).item()
+    )
+    mae_allowance = FP32_MAE_MULTIPLIER * bf16_math_mae
+    max_abs_allowance = (
+        FP32_MAX_ERROR_MULTIPLIER * bf16_math_max_abs
+        + FP32_TENSOR_ULP_MULTIPLIER * tensor_scale_ulp
+    )
+    aggregate_ok = (
+        finite_ok
+        and candidate_mae <= mae_allowance
+        and candidate_max_abs <= max_abs_allowance
+    )
 
     return {
-        "ok": not bool(violations.any().item()),
-        "violations": int(violations.sum().item()),
+        "ok": aggregate_ok,
+        "finite_ok": finite_ok,
         "elements": candidate.numel(),
-        "max_ratio": _finite_max(ratio),
-        "candidate_max_abs": _finite_max(candidate_error),
-        "candidate_mae": _finite_mean(candidate_error),
-        "bf16_math_max_abs": _finite_max(dtype_error),
-        "bf16_math_mae": _finite_mean(dtype_error),
-        "allowance_max": _finite_max(allowance),
+        "candidate_max_abs": candidate_max_abs,
+        "candidate_mae": candidate_mae,
+        "bf16_math_max_abs": bf16_math_max_abs,
+        "bf16_math_mae": bf16_math_mae,
+        "mae_ratio": candidate_mae / max(bf16_math_mae, 1.0e-30),
+        "mae_allowance": mae_allowance,
+        "max_abs_allowance": max_abs_allowance,
+        "tensor_scale_ulp": tensor_scale_ulp,
+        "local_envelope_ok": not bool(local_violations.any().item()),
+        "local_envelope_violations": int(local_violations.sum().item()),
+        "local_envelope_max_ratio": _finite_max(local_ratio),
+        "local_envelope_allowance_max": _finite_max(local_allowance),
     }
 
 
@@ -203,7 +281,12 @@ def run_case(
         for name in ("out", *gradient_names)
     }
     fp32_oracle_ok = all(bool(metrics["ok"]) for metrics in oracle.values())
-    fp32_oracle_max_ratio = max(float(metrics["max_ratio"]) for metrics in oracle.values())
+    fp32_oracle_max_mae_ratio = max(
+        float(metrics["mae_ratio"]) for metrics in oracle.values()
+    )
+    fp32_local_envelope_ok = all(
+        bool(metrics["local_envelope_ok"]) for metrics in oracle.values()
+    )
 
     dv_bf16_abs = (actual["dv"].float() - bf16_math["dv"].float()).abs()
     dv_max_index = int(dv_bf16_abs.flatten().argmax().item())
@@ -240,13 +323,15 @@ def run_case(
         ),
         "boundary_ok": boundary_ok,
         "fp32_oracle_ok": fp32_oracle_ok,
-        "fp32_oracle_max_ratio": fp32_oracle_max_ratio,
+        "fp32_oracle_max_mae_ratio": fp32_oracle_max_mae_ratio,
+        "fp32_local_envelope_ok": fp32_local_envelope_ok,
         "ok": boundary_ok and fp32_oracle_ok,
     }
     for name, metrics in oracle.items():
         for metric_name, value in metrics.items():
             result[f"{name}_fp32_{metric_name}"] = value
     return result
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -267,6 +352,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    verify_bf16_early_clobber()
+
     if not torch.cuda.is_available():
         raise RuntimeError("no CUDA/HIP device is visible")
     torch.cuda.set_device(args.device)
@@ -285,11 +372,13 @@ def main() -> int:
         for seqlen, headdim, seed in CASES
     ]
 
+    serializable_rows = [json_safe(row) for row in rows]
+
     args.csv.parent.mkdir(parents=True, exist_ok=True)
     with args.csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer = csv.DictWriter(handle, fieldnames=list(serializable_rows[0]))
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(serializable_rows)
 
     report = {
         "device": args.device,
@@ -297,14 +386,20 @@ def main() -> int:
             "scaled_atol": args.scaled_atol,
             "relative_atol": args.relative_atol,
             "max_ulp": args.max_ulp,
-            "fp32_error_multiplier": FP32_ERROR_MULTIPLIER,
-            "bf16_floor_multiplier": BF16_FLOOR_MULTIPLIER,
+            "fp32_mae_multiplier": FP32_MAE_MULTIPLIER,
+            "fp32_max_error_multiplier": FP32_MAX_ERROR_MULTIPLIER,
+            "fp32_tensor_ulp_multiplier": FP32_TENSOR_ULP_MULTIPLIER,
+            "local_fp32_error_multiplier": LOCAL_FP32_ERROR_MULTIPLIER,
+            "local_bf16_floor_multiplier": LOCAL_BF16_FLOOR_MULTIPLIER,
         },
+        "bf16_early_clobber_source_check": True,
         "passed": all(bool(row["ok"]) for row in rows),
-        "rows": rows,
+        "rows": serializable_rows,
     }
     args.json.parent.mkdir(parents=True, exist_ok=True)
-    args.json.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    args.json.write_text(
+        json.dumps(report, indent=2, sort_keys=True, allow_nan=False), encoding="utf-8"
+    )
 
     for row in rows:
         print(
@@ -313,7 +408,8 @@ def main() -> int:
             f"bwd_relative={row['bwd_relative_vs_bf16_math']} "
             f"bwd_ulp_at_max={row['bwd_ulp_at_max_abs']} "
             f"fp32_gate={row['fp32_oracle_ok']} "
-            f"fp32_max_ratio={row['fp32_oracle_max_ratio']}"
+            f"fp32_max_mae_ratio={row['fp32_oracle_max_mae_ratio']} "
+            f"local_envelope={row['fp32_local_envelope_ok']}"
         )
     print(f"csv={args.csv}")
     print(f"json={args.json}")

@@ -8,6 +8,7 @@ import base64
 import hashlib
 import importlib
 import json
+import sys
 from pathlib import Path
 
 
@@ -102,11 +103,27 @@ def check_marker(
     ):
         raise RuntimeError("full-build marker does not match generated-source manifest")
 
+    if MODULE_NAME in sys.modules:
+        raise RuntimeError(f"refusing a preloaded {MODULE_NAME} module")
+
     importlib.invalidate_caches()
-    module = importlib.import_module(MODULE_NAME)
+    # Load PyTorch first so its shared libraries are available to the extension.
+    importlib.import_module("torch")
+    if MODULE_NAME in sys.modules:
+        raise RuntimeError(f"PyTorch unexpectedly preloaded {MODULE_NAME}")
+
+    original_sys_path = sys.path.copy()
+    try:
+        sys.path.insert(0, str(extension.parent))
+        module = importlib.import_module(MODULE_NAME)
+    finally:
+        sys.path[:] = original_sys_path
+
     loaded_path = Path(module.__file__).resolve()
     if loaded_path != extension:
         raise RuntimeError(f"loaded extension is not local: {loaded_path}")
+    if content_digest(extension) != expected["content_digest"]:
+        raise RuntimeError("extension changed while it was being loaded")
     print(f"Local frozen full extension: {loaded_path}")
 
 
