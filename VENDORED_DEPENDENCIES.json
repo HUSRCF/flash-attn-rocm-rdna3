@@ -33,5 +33,6 @@
     "sha256": "6be4ac4c2b26610afb8b493da9a5a4883757a5d1b73e546393bc723de409406b",
     "git_policy": "release asset only; not stored in source Git"
   },
+  "vendored_file_inventory": "VENDORED_FILES.txt",
   "validation_report": "docs/release/RESULTS.md"
 }

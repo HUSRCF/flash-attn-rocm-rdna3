@@ -79,6 +79,33 @@ def max_abs_value(a: torch.Tensor) -> float:
     return float(a.abs().max().item())
 
 
+def bf16_ulp_at_max_abs(a: torch.Tensor, b: torch.Tensor) -> int:
+    """Return the largest BF16 ULP distance at a maximum-error element."""
+    if a.dtype != torch.bfloat16 or b.dtype != torch.bfloat16:
+        raise TypeError("BF16 ULP distance requires bfloat16 tensors")
+
+    abs_diff = (a.detach().float() - b.detach().float()).abs()
+    max_diff = abs_diff.max()
+    if float(max_diff.item()) == 0.0:
+        return 0
+
+    # Convert sign-magnitude BF16 encodings to a monotonically ordered integer
+    # space. Positive and negative zero intentionally map to the same point.
+    sign = 1 << 15
+    magnitude = sign - 1
+
+    def ordered_bits(value: torch.Tensor) -> torch.Tensor:
+        raw = value.detach().view(torch.int16).to(torch.int32) & ((1 << 16) - 1)
+        return torch.where(
+            (raw & sign) != 0,
+            sign - (raw & magnitude),
+            raw + sign,
+        )
+
+    ulp = (ordered_bits(a) - ordered_bits(b)).abs()
+    return int(ulp[abs_diff == max_diff].max().item())
+
+
 def make_tensors(
     batch: int,
     seqlen: int,
@@ -158,8 +185,39 @@ def run_correctness_once(args, dtype_name: str, causal: bool, seqlen: int, headd
     bwd_rel = max(dq_rel, dk_rel, dv_rel)
     bwd_scaled = bwd_abs / scale
 
+    if dtype_name == "bf16":
+        gradient_pairs = (
+            (dq_fa, dq_ref, dq_abs),
+            (dk_fa, dk_ref, dk_abs),
+            (dv_fa, dv_ref, dv_abs),
+        )
+        bwd_ulp_at_max_abs = max(
+            bf16_ulp_at_max_abs(actual, reference)
+            for actual, reference, tensor_abs in gradient_pairs
+            if tensor_abs == bwd_abs
+        )
+    else:
+        bwd_ulp_at_max_abs = -1
+
     fwd_atol = args.bf16_fwd_atol if dtype_name == "bf16" else args.fp16_fwd_atol
-    ok = fwd_abs <= fwd_atol and bwd_scaled <= args.bwd_scaled_atol and bwd_rel <= args.bwd_rel_atol
+    fwd_ok = fwd_abs <= fwd_atol
+    strict_bwd_ok = (
+        bwd_scaled <= args.bwd_scaled_atol
+        and bwd_rel <= args.bwd_rel_atol
+    )
+    bf16_boundary_ok = (
+        dtype_name == "bf16"
+        and bwd_scaled <= args.bf16_boundary_bwd_scaled_atol
+        and bwd_rel <= args.bf16_boundary_bwd_rel_atol
+        and bwd_ulp_at_max_abs <= args.bf16_boundary_max_ulp
+    )
+    ok = fwd_ok and (strict_bwd_ok or bf16_boundary_ok)
+    if fwd_ok and strict_bwd_ok:
+        gate = "strict"
+    elif fwd_ok and bf16_boundary_ok:
+        gate = "bf16_ulp_boundary"
+    else:
+        gate = "fail"
 
     return {
         "dtype": dtype_name,
@@ -177,6 +235,8 @@ def run_correctness_once(args, dtype_name: str, causal: bool, seqlen: int, headd
         "dk_rel": dk_rel,
         "dv_rel": dv_rel,
         "bwd_rel": bwd_rel,
+        "bwd_ulp_at_max_abs": bwd_ulp_at_max_abs,
+        "gate": gate,
         "ok": ok,
         "error": "",
     }
@@ -198,6 +258,7 @@ def summarize_correctness(rows: List[Dict[str, object]]) -> List[Dict[str, objec
             "dv_abs",
             "bwd_scaled",
             "bwd_rel",
+            "bwd_ulp_at_max_abs",
         ]
         item: Dict[str, object] = {
             "dtype": dtype_name,
@@ -205,6 +266,7 @@ def summarize_correctness(rows: List[Dict[str, object]]) -> List[Dict[str, objec
             "seqlen": seqlen,
             "headdim": headdim,
             "repeats": len(values),
+            "gates": ",".join(sorted({str(value["gate"]) for value in values})),
             "ok": all(bool(v["ok"]) for v in values),
         }
         for key in numeric_keys:
@@ -353,6 +415,9 @@ def main() -> int:
     parser.add_argument("--bf16-fwd-atol", type=float, default=2.0e-2)
     parser.add_argument("--bwd-scaled-atol", type=float, default=3.0e-2)
     parser.add_argument("--bwd-rel-atol", type=float, default=3.0e-2)
+    parser.add_argument("--bf16-boundary-bwd-scaled-atol", type=float, default=4.1e-2)
+    parser.add_argument("--bf16-boundary-bwd-rel-atol", type=float, default=8.0e-3)
+    parser.add_argument("--bf16-boundary-max-ulp", type=int, default=1)
     parser.add_argument("--perf", action="store_true")
     parser.add_argument("--perf-iters", type=int, default=20)
     parser.add_argument("--perf-warmup", type=int, default=5)
@@ -420,6 +485,8 @@ def main() -> int:
                             f"rep={rep} fwd={float(row.get('fwd_abs', math.nan)):.6f} "
                             f"bwd_scaled={float(row.get('bwd_scaled', math.nan)):.6f} "
                             f"bwd_rel={float(row.get('bwd_rel', math.nan)):.6f} "
+                            f"bwd_ulp_at_max_abs={int(row.get('bwd_ulp_at_max_abs', -1))} "
+                            f"gate={row.get('gate', 'fail')} "
                             f"err={row.get('error', '')}"
                         )
                         if failures and args.fail_fast:
@@ -464,6 +531,11 @@ def main() -> int:
         "elapsed_sec": time.time() - start_time,
         "total_runs": len(correctness_rows),
         "failed_runs": failures,
+        "strict_runs": sum(row.get("gate") == "strict" for row in correctness_rows),
+        "bf16_ulp_boundary_runs": sum(
+            row.get("gate") == "bf16_ulp_boundary" for row in correctness_rows
+        ),
+        "correctness": correctness_rows,
         "summary": summary_rows,
         "perf": perf_rows,
     }

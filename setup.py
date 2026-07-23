@@ -12,7 +12,7 @@ from pathlib import Path
 from packaging.version import parse, Version
 import platform
 
-from setuptools import setup, find_packages
+from setuptools import Distribution, setup, find_packages
 import subprocess
 
 import urllib.request
@@ -30,25 +30,24 @@ from torch.utils.cpp_extension import (
 )
 
 
-with open("README.md", "r", encoding="utf-8") as fh:
+# Resolve every repository path from setup.py itself.  This makes metadata and
+# source builds independent of the caller's current working directory.
+this_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(this_dir)
+
+with open(Path(this_dir) / "README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 
 # ninja build does not work unless include_dirs are abs path
-this_dir = os.path.dirname(os.path.abspath(__file__))
-
-BUILD_TARGET = os.environ.get("BUILD_TARGET", "auto")
+BUILD_TARGET = os.environ.get("BUILD_TARGET", "auto").strip().lower()
+if BUILD_TARGET not in {"auto", "cuda", "rocm"}:
+    raise ValueError("BUILD_TARGET must be one of: auto, cuda, rocm")
 
 if BUILD_TARGET == "auto":
-    if IS_HIP_EXTENSION:
-        IS_ROCM = True
-    else:
-        IS_ROCM = False
+    IS_ROCM = bool(IS_HIP_EXTENSION)
 else:
-    if BUILD_TARGET == "cuda":
-        IS_ROCM = False
-    elif BUILD_TARGET == "rocm":
-        IS_ROCM = True
+    IS_ROCM = BUILD_TARGET == "rocm"
 
 PACKAGE_NAME = "flash_attn"
 
@@ -69,6 +68,18 @@ NVCC_THREADS = os.getenv("NVCC_THREADS") or "16"
 
 def _env_flag(name: str, default: str = "FALSE") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+CK_BUILD_PROFILE = os.getenv("FLASH_ATTN_CK_PROFILE", "developer").strip().lower()
+if CK_BUILD_PROFILE not in {"developer", "release"}:
+    raise ValueError("FLASH_ATTN_CK_PROFILE must be one of: developer, release")
+
+# Source builds are the safe default for this frozen repository.  Downloading
+# an upstream wheel is retained only as an explicit developer opt-in.
+ALLOW_REMOTE_WHEEL = _env_flag("FLASH_ATTENTION_ALLOW_REMOTE_WHEEL", "FALSE")
+# SKIP_CUDA_BUILD is accepted by the release profile only when this explicit
+# metadata intent is also set and every requested setup command is metadata-only.
+METADATA_ONLY = _env_flag("FLASH_ATTENTION_METADATA_ONLY", "FALSE")
 
 # CK 极简调试模式：仅编译极小实例集合，快速定位 kernel 问题
 CK_MINIMAL_DEBUG = _env_flag("FLASH_ATTN_CK_MINIMAL_DEBUG", "FALSE")
@@ -261,6 +272,71 @@ CK_DEBUG_BWD_SPLIT_DV_GEMM1_BSMEM_D256 = os.getenv(
 CK_USE_AMD_BUFFER_ATOMIC_ADD_FLOAT_ONLY = os.getenv(
     "CK_TILE_USE_AMD_BUFFER_ATOMIC_ADD_FLOAT_ONLY"
 )
+
+
+def validate_release_profile():
+    """Reject environment-dependent or experimental release builds."""
+    if CK_BUILD_PROFILE != "release":
+        return
+
+    if BUILD_TARGET != "rocm":
+        raise RuntimeError(
+            "FLASH_ATTN_CK_PROFILE=release requires BUILD_TARGET=rocm"
+        )
+    if os.getenv("GPU_ARCHS", "").strip() != "gfx1100":
+        raise RuntimeError(
+            "FLASH_ATTN_CK_PROFILE=release requires GPU_ARCHS=gfx1100"
+        )
+    if USE_TRITON_ROCM:
+        raise RuntimeError(
+            "FLASH_ATTN_CK_PROFILE=release builds the frozen CK backend, not Triton"
+        )
+    if ALLOW_REMOTE_WHEEL:
+        raise RuntimeError(
+            "FLASH_ATTN_CK_PROFILE=release forbids remote wheel downloads"
+        )
+
+    known_setup_commands = {
+        command_name for command_name, _ in Distribution().get_command_list()
+    }
+    requested_setup_commands = [
+        argument for argument in sys.argv[1:] if argument in known_setup_commands
+    ]
+    metadata_only_commands = {"clean", "dist_info", "egg_info", "sdist"}
+    non_metadata_commands = [
+        command
+        for command in requested_setup_commands
+        if command not in metadata_only_commands
+    ]
+    if SKIP_CUDA_BUILD and not METADATA_ONLY:
+        raise RuntimeError(
+            "FLASH_ATTN_CK_PROFILE=release requires "
+            "FLASH_ATTENTION_METADATA_ONLY=TRUE whenever CUDA/ROCm build is skipped"
+        )
+    if SKIP_CUDA_BUILD and non_metadata_commands:
+        raise RuntimeError(
+            "FLASH_ATTN_CK_PROFILE=release forbids FLASH_ATTENTION_SKIP_CUDA_BUILD=TRUE "
+            "for non-metadata commands: " + ", ".join(non_metadata_commands)
+        )
+    if FORCE_CXX11_ABI:
+        raise RuntimeError(
+            "FLASH_ATTN_CK_PROFILE=release rejects FLASH_ATTENTION_FORCE_CXX11_ABI"
+        )
+
+    ck_overrides = sorted(name for name in os.environ if name.startswith("CK_TILE_"))
+    if ck_overrides:
+        raise RuntimeError(
+            "FLASH_ATTN_CK_PROFILE=release rejects CK_TILE_* overrides; unset: "
+            + ", ".join(ck_overrides)
+        )
+    if not CK_MINIMAL_DEBUG and os.getenv("OPT_DIM") is not None:
+        raise RuntimeError(
+            "FLASH_ATTN_CK_PROFILE=release full builds reject OPT_DIM; "
+            "the frozen full kernel closure is used"
+        )
+
+
+validate_release_profile()
 
 
 def filter_ck_minimal_generated_sources(paths):
@@ -496,27 +572,66 @@ def validate_and_update_archs(archs):
     ), f"One of GPU archs of {archs} is invalid or not supported by Flash-Attention"
 
 
+def validate_vendored_sources():
+    """Verify that this source tree contains the frozen third-party closure."""
+    required_paths = (
+        "VENDORED_DEPENDENCIES.json",
+        "VENDORED_FILES.txt",
+        "csrc/composable_kernel/LICENSE",
+        "csrc/composable_kernel/example/ck_tile/01_fmha/generate.py",
+        "csrc/composable_kernel/include/ck/ck.hpp",
+        "csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/"
+        "block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp",
+        "csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/"
+        "block_fmha_bwd_dq_pipeline_kr_ktr_vr_iglp.hpp",
+        "csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/"
+        "block_fmha_bwd_dq_qmajor_pipeline_kr_ktr_vr_iglp.hpp",
+        "csrc/composable_kernel/include/ck_tile/ops/gemm/warp/"
+        "warp_wmma_gemm_gfx11_utils.hpp",
+        "csrc/cutlass/LICENSE.txt",
+        "csrc/cutlass/include/cutlass/cutlass.h",
+        "csrc/flash_attn_ck/generated_sources_gfx1100.txt",
+    )
+    inventory_path = Path(this_dir) / "VENDORED_FILES.txt"
+    inventory = (
+        inventory_path.read_text(encoding="utf-8").splitlines()
+        if inventory_path.is_file()
+        else []
+    )
+    valid_prefixes = ("csrc/composable_kernel/", "csrc/cutlass/")
+    if (
+        not inventory
+        or inventory != sorted(set(inventory))
+        or any(not path.startswith(valid_prefixes) for path in inventory)
+    ):
+        raise RuntimeError(
+            "VENDORED_FILES.txt must be a non-empty, sorted, unique CK/CUTLASS inventory"
+        )
+
+    missing = [
+        relative_path
+        for relative_path in (*required_paths, *inventory)
+        if not (Path(this_dir) / relative_path).is_file()
+    ]
+    if missing:
+        displayed = missing[:20]
+        formatted = "\n  - ".join(displayed)
+        remainder = len(missing) - len(displayed)
+        suffix = f"\n  - ... and {remainder} more" if remainder else ""
+        raise RuntimeError(
+            "Frozen source tree is incomplete; missing vendored files:\n  - "
+            f"{formatted}{suffix}\n"
+            "Use a complete release archive or an ordinary clone of the frozen "
+            "repository. Git submodules and source downloads are not used."
+        )
+
+
 cmdclass = {}
 ext_modules = []
 
-# We want this even if SKIP_CUDA_BUILD because when we run python setup.py sdist we want the .hpp
-# files included in the source distribution, in case the user compiles from source.
-if os.path.isdir(".git"):
-    if not SKIP_CK_BUILD:
-        # RDNA3 Fix: Commented out to prevent overwriting manual patches
-        # subprocess.run(["git", "submodule", "update", "--init", "csrc/composable_kernel"], check=True)
-        # subprocess.run(["git", "submodule", "update", "--init", "csrc/cutlass"], check=True)
-        pass
-else:
-    if IS_ROCM:
-        if not SKIP_CK_BUILD:
-            assert (
-                os.path.exists("csrc/composable_kernel/example/ck_tile/01_fmha/generate.py")
-            ), "csrc/composable_kernel is missing, please use source distribution or git clone"
-    else:
-        assert (
-            os.path.exists("csrc/cutlass/include/cutlass/cutlass.h")
-        ), "csrc/cutlass is missing, please use source distribution or git clone"
+# The frozen repository vendors CK and CUTLASS as ordinary files.  Validate the
+# closure regardless of whether the source came from Git, an sdist, or a copy.
+validate_vendored_sources()
 
 if not SKIP_CUDA_BUILD and not IS_ROCM:
     print("\n\ntorch.__version__  = {}\n\n".format(torch.__version__))
@@ -676,7 +791,7 @@ elif not SKIP_CUDA_BUILD and IS_ROCM:
         else:
             # Codegen filenames include tile sizes. When tuning tile shapes, stale
             # generated FMHA files can remain and be picked up by glob() below.
-            for stale_path in glob.glob("build/fmha_*"):
+            for stale_path in sorted(glob.glob("build/fmha_*")):
                 if os.path.isfile(stale_path):
                     os.remove(stale_path)
 
@@ -875,7 +990,7 @@ elif not SKIP_CUDA_BUILD and IS_ROCM:
                 "csrc/flash_attn_ck/mha_varlen_bwd.cpp",
                 "csrc/flash_attn_ck/mha_varlen_fwd.cpp",
             ]
-        generated_cpp_sources = glob.glob("build/fmha_*wd*.cpp")
+        generated_cpp_sources = sorted(glob.glob("build/fmha_*wd*.cpp"))
         if CK_MINIMAL_DEBUG:
             before = len(generated_cpp_sources)
             generated_cpp_sources = filter_ck_minimal_generated_sources(generated_cpp_sources)
@@ -891,6 +1006,46 @@ elif not SKIP_CUDA_BUILD and IS_ROCM:
             )
             if kernel_count == 0:
                 raise RuntimeError("[CK_MINIMAL_DEBUG] 过滤后无可用 CK kernel，请检查最小化条件")
+
+        if CK_BUILD_PROFILE == "release" and not CK_MINIMAL_DEBUG:
+            expected_generated_sources = 3063
+            manifest_path = (
+                Path(this_dir)
+                / "csrc"
+                / "flash_attn_ck"
+                / "generated_sources_gfx1100.txt"
+            )
+            expected_source_names = [
+                line.strip()
+                for line in manifest_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            if (
+                len(expected_source_names) != expected_generated_sources
+                or len(set(expected_source_names)) != expected_generated_sources
+            ):
+                raise RuntimeError(
+                    "Frozen full CK manifest is invalid: expected exactly "
+                    f"{expected_generated_sources} unique source names, found "
+                    f"{len(expected_source_names)} entries"
+                )
+
+            actual_source_names = [
+                Path(source).name for source in generated_cpp_sources
+            ]
+            if actual_source_names != expected_source_names:
+                missing = sorted(set(expected_source_names) - set(actual_source_names))
+                unexpected = sorted(set(actual_source_names) - set(expected_source_names))
+                details = []
+                if missing:
+                    details.append("missing: " + ", ".join(missing[:10]))
+                if unexpected:
+                    details.append("unexpected: " + ", ".join(unexpected[:10]))
+                if not details:
+                    details.append("generated source order or duplicate identity differs")
+                raise RuntimeError(
+                    "Frozen full CK source identity mismatch; " + "; ".join(details)
+                )
 
         sources = base_cpp_sources + generated_cpp_sources
 
@@ -1530,7 +1685,8 @@ class CachedWheelsCommand(_bdist_wheel):
     """
 
     def run(self):
-        if FORCE_BUILD:
+        if FORCE_BUILD or not ALLOW_REMOTE_WHEEL:
+            print("Building wheel from the local frozen source tree.")
             return super().run()
 
         wheel_url, wheel_filename = get_wheel_url()
@@ -1622,10 +1778,5 @@ setup(
     install_requires=[
         "torch",
         "einops",
-    ],
-    setup_requires=[
-        "packaging",
-        "psutil",
-        "ninja",
     ],
 )

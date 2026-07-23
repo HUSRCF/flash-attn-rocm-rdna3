@@ -1,4 +1,30 @@
 # FlashAttention
+
+## Frozen RDNA3 / ROCm CK source snapshot
+
+This repository snapshot carries its required Composable Kernel and CUTLASS
+sources directly under `csrc/`; it has no Git submodule setup step and does not
+download source dependencies while building. ROCm, a matching ROCm-enabled
+PyTorch installation, and the Python build tools remain external prerequisites.
+
+For the validated `gfx1100` path, start with:
+
+```bash
+make doctor
+make vendor-check
+make test-smoke
+```
+
+`make test-smoke` builds the minimal closure before testing it. Use
+`make test-release` to build and test the frozen full kernel set, or
+`make build-full` when only compilation is wanted. See
+[BUILDING_ROCM.md](BUILDING_ROCM.md) for offline builds, dependency
+provisioning, release-profile rules, and source-archive contents. For this
+snapshot, use those Make targets and the build guide as the installation and
+support contract. The commands below this notice are broader upstream
+FlashAttention documentation; in particular, generic package-index installs
+and upstream device lists do not describe this frozen RDNA3 release.
+
 This repository provides the official implementation of FlashAttention and
 FlashAttention-2 from the
 following papers.

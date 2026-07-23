@@ -1,0 +1,9 @@
+-r requirements-runtime.txt
+
+# Imported by setup.py or its native-extension build command.
+setuptools>=64
+wheel
+packaging
+psutil
+ninja
+pytest

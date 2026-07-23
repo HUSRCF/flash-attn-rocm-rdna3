@@ -45,6 +45,7 @@ venv/
 /pmc*.csv
 /pmc_counters.txt
 /*_NOTE.md
+/PREBUILT_INSTALL.md
 /command.md
 /command.txt
 /history.txt

@@ -1,0 +1,44 @@
+name: Frozen source closure
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-closure:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout ordinary source tree
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Verify vendored source closure
+        run: make freeze-check
+
+      - name: Verify release helper syntax
+        run: >-
+          python -m py_compile
+          setup.py
+          scripts/test_prebuilt_flash_attn_ck.py
+          scripts/audit_bf16_boundary_fp32.py
+          scripts/release_extension_stamp.py
+
+
+      - name: Install source-archive metadata dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel packaging psutil ninja einops
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Verify source archive contents
+        run: make verify-sdist VERIFY_SDIST_BUILD=0 DIST_DIR=dist
+
+      - name: Confirm checks did not modify tracked source
+        run: git diff --exit-code

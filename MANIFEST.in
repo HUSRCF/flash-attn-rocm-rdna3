@@ -1,12 +1,43 @@
-recursive-include csrc *.cu
-recursive-include csrc *.h
-recursive-include csrc *.cuh
-recursive-include csrc *.cpp
-recursive-include csrc *.hpp
-recursive-include csrc *.py
+include LICENSE
+include README.md
+include BUILDING_ROCM.md
+include THIRD_PARTY_NOTICES.md
+include VENDORED_DEPENDENCIES.json
+include VENDORED_FILES.txt
+include requirements-build.txt
+include requirements-runtime.txt
+include Makefile
+include setup.py
 
-recursive-include flash_attn *.cu
-recursive-include flash_attn *.h
-recursive-include flash_attn *.cuh
-recursive-include flash_attn *.cpp
-recursive-include flash_attn *.hpp
+recursive-include docs/release *.md
+recursive-include scripts *.py *.sh
+recursive-include assets *.png *.jpg
+
+# Package Python and native sources, including the complete vendored CK and
+# CUTLASS trees.  The code generator needs more than C/C++ headers (Python,
+# CMake, text templates, and metadata), so extension-only patterns are not a
+# sufficient source-distribution closure.
+graft flash_attn
+graft csrc
+recursive-include tests *.py *.toml
+include tests/release_ck_nodes.txt
+
+# Never package native build products that may exist below a grafted vendored
+# tree. Root build and experiment directories are omitted by construction: no
+# root-level graft or recursive-include rule selects them.
+prune csrc/composable_kernel/build
+prune csrc/composable_kernel/build_*
+prune csrc/cutlass/build
+prune csrc/cutlass/build_*
+prune tests/.pytest_cache
+
+# CK's *_hip.hpp files are generated from the canonical headers during local
+# builds.  Keeping them out makes an sdist independent of prior build state.
+recursive-exclude csrc/composable_kernel *_hip.hpp
+recursive-exclude flash_attn __pycache__/* .pytest_cache/*
+recursive-exclude csrc __pycache__/* .pytest_cache/*
+recursive-exclude tests __pycache__/* .pytest_cache/*
+
+global-exclude *.so *.o *.obj *.a *.dylib *.dll *.hsaco
+global-exclude *.py[cod] __pycache__ .pytest_cache
+global-exclude *~ .DS_Store

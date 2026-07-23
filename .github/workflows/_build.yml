@@ -46,7 +46,10 @@ jobs:
         uses: actions/checkout@v5
         with:
           ref: ${{ inputs.release-version }}
-          submodules: recursive
+
+      - name: Capture checked-out source identity
+        id: source_identity
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -131,9 +134,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: build.tar
-          key: build-${{ inputs.release-version }}-${{ inputs.python-version }}-${{ inputs.cuda-version }}-${{ inputs.torch-version }}-${{ inputs.cxx11_abi }}-${{ github.run_number }}-${{ github.run_attempt }}
+          key: build-${{ runner.os }}-${{ runner.arch }}-${{ inputs.runs-on }}-${{ inputs.release-version }}-${{ inputs.python-version }}-${{ inputs.cuda-version }}-${{ inputs.torch-version }}-${{ inputs.cxx11_abi }}-${{ steps.source_identity.outputs.commit }}-${{ github.sha }}-${{ github.run_number }}-${{ github.run_attempt }}
           restore-keys: |
-            build-${{ inputs.release-version }}-${{ inputs.python-version }}-${{ inputs.cuda-version }}-${{ inputs.torch-version }}-${{ inputs.cxx11_abi }}-
+            build-${{ runner.os }}-${{ runner.arch }}-${{ inputs.runs-on }}-${{ inputs.release-version }}-${{ inputs.python-version }}-${{ inputs.cuda-version }}-${{ inputs.torch-version }}-${{ inputs.cxx11_abi }}-${{ steps.source_identity.outputs.commit }}-${{ github.sha }}-
 
       - name: Unpack build cache
         run: |
@@ -142,7 +145,7 @@ jobs:
           echo ::endgroup::
 
           if [ -f build.tar ]; then
-            find . -mindepth 1 -maxdepth 1 ! -name 'build.tar' -exec rm -rf {} +
+            # The cache contains build products only; never replace checked-out source.
             tar -xpvf build.tar -C .
           else
             echo "No build.tar found, skipping"
@@ -191,13 +194,17 @@ jobs:
         if: always() && steps.build_wheel.outputs.build_exit_code == 124
         run: |
           ls -al ./
-          tar -cvf build.tar . --atime-preserve=replace
+          if [ -d build ]; then
+            tar -cvf build.tar build --atime-preserve=replace
+          else
+            echo "No build directory was produced before the timeout"
+          fi
 
       - name: Save build cache timeout
         if: always() && steps.build_wheel.outputs.build_exit_code == 124
         uses: actions/cache/save@v4
         with:
-          key: build-${{ inputs.release-version }}-${{ inputs.python-version }}-${{ inputs.cuda-version }}-${{ inputs.torch-version }}-${{ inputs.cxx11_abi }}-${{ github.run_number }}-${{ github.run_attempt }}
+          key: build-${{ runner.os }}-${{ runner.arch }}-${{ inputs.runs-on }}-${{ inputs.release-version }}-${{ inputs.python-version }}-${{ inputs.cuda-version }}-${{ inputs.torch-version }}-${{ inputs.cxx11_abi }}-${{ steps.source_identity.outputs.commit }}-${{ github.sha }}-${{ github.run_number }}-${{ github.run_attempt }}
           path: build.tar
 
       - name: Log Built Wheels
