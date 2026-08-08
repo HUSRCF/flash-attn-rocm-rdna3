@@ -1,4 +1,3 @@
-# Install a ROCm-enabled PyTorch build that matches the local ROCm toolchain.
-# PyTorch itself is intentionally an external dependency of this source tree.
-torch>=2.2
+# PyTorch is an external prerequisite and is intentionally absent here so pip
+# cannot replace a working ROCm build with an incompatible generic package.
 einops

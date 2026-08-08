@@ -19,10 +19,17 @@ The recommended installation path builds the complete frozen kernel set into a
 local wheel and then installs that wheel without resolving or replacing the
 existing ROCm/PyTorch environment:
 
+> [!IMPORTANT]
+> Install a ROCm-enabled PyTorch build before using this repository. PyTorch is
+> deliberately excluded from both requirements files and wheel dependencies so
+> pip cannot silently replace it with an incompatible generic build. PyTorch
+> 2.9 or newer is recommended; versions below 2.9 are not guaranteed.
+
 ```bash
 git clone https://github.com/HUSRCF/flash-attn-rocm-rdna3.git
 cd flash-attn-rocm-rdna3
 
+python -c "import torch; assert torch.version.hip, 'install ROCm-enabled PyTorch first'; print(torch.__version__, torch.version.hip)"
 python -m pip install -r requirements-build.txt
 make doctor
 make freeze-check
@@ -167,14 +174,17 @@ The initially load-contaminated non-causal D128/S4096 point was replaced by a
 separate five-round, ten-position recheck, which measured 1.311x with a
 1.270x–1.379x round range.
 
-The checked-in source data is
+The checked-in aggregated source data is
 [`benchmarks/results/fp16_fwd_abba_20260808.csv`](benchmarks/results/fp16_fwd_abba_20260808.csv).
-The data and figure can be regenerated from the local raw ABBA outputs with:
+The figure can be regenerated from a normal clone with:
 
 ```bash
-python scripts/summarize_fp16_fwd_abba.py
 python scripts/plot_fp16_fwd_abba.py
 ```
+
+Rebuilding the aggregated CSV with `scripts/summarize_fp16_fwd_abba.py`
+requires the original raw ABBA outputs under `dse_results/`; those large local
+measurement files are not included in the repository.
 
 ### BF16 forward across head dimensions
 
@@ -203,14 +213,17 @@ six process-level measurements; each position is a 10%-trimmed mean of its
 trials. All bars use three balanced ABBA rounds. No temperature-based
 exclusion was applied.
 
-The checked-in source data is
+The checked-in aggregated source data is
 [`benchmarks/results/bf16_fwd_abba_20260808.csv`](benchmarks/results/bf16_fwd_abba_20260808.csv).
-The data and figure can be regenerated from the local raw ABBA outputs with:
+The figure can be regenerated from a normal clone with:
 
 ```bash
-python scripts/summarize_bf16_fwd_abba.py
 python scripts/plot_bf16_fwd_abba.py
 ```
+
+Rebuilding the aggregated CSV with `scripts/summarize_bf16_fwd_abba.py`
+requires the original raw ABBA outputs under `dse_results/`; those large local
+measurement files are not included in the repository.
 
 See
 [BUILDING_ROCM.md](BUILDING_ROCM.md) for offline builds, dependency
@@ -219,6 +232,13 @@ snapshot, use those Make targets and the build guide as the installation and
 support contract. The commands below this notice are broader upstream
 FlashAttention documentation; in particular, generic package-index installs
 and upstream device lists do not describe this frozen RDNA3 release.
+
+<details>
+<summary><strong>Upstream reference</strong></summary>
+
+The content below is retained from upstream for API, history, and citation
+reference. Its installation and hardware-support instructions are not the
+installation contract for this frozen `gfx1100` release.
 
 This repository provides the official implementation of FlashAttention and
 FlashAttention-2 from the
@@ -785,3 +805,5 @@ If you use this codebase, or otherwise found our work valuable, please cite:
   year={2024}
 }
 ```
+
+</details>

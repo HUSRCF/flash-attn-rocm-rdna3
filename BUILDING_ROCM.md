@@ -54,17 +54,21 @@ it when host memory is limited. The full build is intentionally large.
 
 ## Dependencies
 
-Install the ROCm/PyTorch stack using the distribution appropriate for the host.
-Then install or verify the small Python dependency set:
+Install a ROCm-enabled PyTorch build using the distribution appropriate for the
+host before installing this repository's dependencies. PyTorch 2.9 or newer is
+recommended; versions below 2.9 are not guaranteed. PyTorch is deliberately
+absent from the requirements files and wheel metadata so pip cannot replace a
+working ROCm build with an incompatible generic package.
+
+Verify PyTorch first, then install the small Python dependency set:
 
 ```bash
+python -c "import torch; assert torch.version.hip, 'install ROCm-enabled PyTorch first'; print(torch.__version__, torch.version.hip)"
 python -m pip install -r requirements-build.txt
 python -c "import torch, einops, packaging, psutil, ninja"
 ```
 
-The requirements file does not vendor or select a ROCm runtime. In particular,
-do not replace a working ROCm-enabled PyTorch installation with a generic
-PyTorch wheel.
+The requirements file does not install PyTorch or select a ROCm runtime.
 
 For a machine without package-network access, provision the environment first
 or point pip at a local wheelhouse:

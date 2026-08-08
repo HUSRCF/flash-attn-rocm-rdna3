@@ -152,7 +152,7 @@ Metadata-Version: 2.1
 Name: flash-attn-fa4-prebuilt
 Version: 4.0.0
 Summary: Prebuilt FA4 CK FlashAttention package for ROCm gfx1100.
-Requires-Dist: torch
+Requires-Dist: einops
 EOF
     cat >"$dist_info/WHEEL" <<'EOF'
 Wheel-Version: 1.0
