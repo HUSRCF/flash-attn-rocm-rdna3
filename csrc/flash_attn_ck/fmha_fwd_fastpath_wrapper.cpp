@@ -67,6 +67,53 @@ float fmha_fwd_wrap(fmha_fwd_traits traits,
         return fmha_fwd_<trait_, ck_tile::gfx11_t>(config, args);
     }
 
+    // The linked BF16 D64 b64x64 tile also halves the number of causal K-loop
+    // iterations and synchronization points relative to legacy b64x32.
+    const bool use_gfx11_d64_bf16_b64x64_causal =
+        (traits.data_type.compare("bf16") == 0) and
+        (traits.mask_type == mask_enum::mask_top_left or
+         traits.mask_type == mask_enum::mask_bottom_right) and
+        (args.seqlen_q > 0) and (args.seqlen_q % 64 == 0) and
+        (args.seqlen_k > 0) and (args.seqlen_k % 64 == 0) and
+        (args.cu_seqlen_k_ptr == nullptr) and
+        (args.hdim_q == 64) and (args.hdim_v == 64) and
+        (args.window_size_left < 0) and (args.window_size_right == 0) and
+        (ck_tile::get_device_name().compare(0, 5, "gfx11") == 0) and
+        (not traits.is_group_mode) and traits.is_v_rowmajor and
+        (not traits.has_logits_soft_cap) and
+        (traits.bias_type == bias_enum::no_bias) and traits.has_lse and
+        (not traits.has_dropout) and
+        (traits.qscale_type == quant_scale_enum::no_scale) and
+        (not traits.skip_min_seqlen_q);
+
+    if(use_gfx11_d64_bf16_b64x64_causal)
+    {
+        using trait_ = fmha_fwd_traits_<64,
+                                            FmhaFwdBf16,
+                                            false,
+                                            64,
+                                            64,
+                                            32,
+                                            64,
+                                            32,
+                                            64,
+                                            true,
+                                            ck_tile::BlockFmhaPipelineEnum::QRKSVS,
+                                            false,
+                                            ck_tile::SimplifiedGenericAttentionMask<true>,
+                                            ck_tile::BlockAttentionBiasEnum::NO_BIAS,
+                                            true,
+                                            false,
+                                            ck_tile::BlockAttentionQuantScaleEnum::NO_SCALE,
+                                            false,
+                                            false,
+                                            false,
+                                            false,
+                                            false,
+                                            false>;
+        return fmha_fwd_<trait_, ck_tile::gfx11_t>(config, args);
+    }
+
     // The legacy D128 dispatcher uses an eight-wave b128x32 tile after its
     // short-sequence cutoff. On the validated long noncausal domain, the
     // four-wave b64x32 tile exposes finer workgroup-level parallelism while
@@ -157,6 +204,103 @@ float fmha_fwd_wrap(fmha_fwd_traits traits,
                                             ck_tile::BlockFmhaPipelineEnum::QRKSVS,
                                             false,
                                             ck_tile::SimplifiedGenericAttentionMask<false>,
+                                            ck_tile::BlockAttentionBiasEnum::NO_BIAS,
+                                            true,
+                                            false,
+                                            ck_tile::BlockAttentionQuantScaleEnum::NO_SCALE,
+                                            false,
+                                            false,
+                                            false,
+                                            false,
+                                            false,
+                                            false>;
+        return fmha_fwd_<trait_, ck_tile::gfx11_t>(config, args);
+    }
+
+    // Causal masking wastes proportionally more work in the legacy eight-wave
+    // b128 Q tile. The linked four-wave b64x32 tile reduces that triangular
+    // waste and exposes twice as many independent Q workgroups.
+    const bool use_gfx11_d128_bf16_b64x32_causal =
+        (traits.data_type.compare("bf16") == 0) and
+        (traits.mask_type == mask_enum::mask_top_left or
+         traits.mask_type == mask_enum::mask_bottom_right) and
+        (args.seqlen_q >= 576) and (args.seqlen_q % 64 == 0) and
+        (args.seqlen_k > 0) and (args.seqlen_k % 32 == 0) and
+        (args.cu_seqlen_k_ptr == nullptr) and
+        (args.hdim_q == 128) and (args.hdim_v == 128) and
+        (args.window_size_left < 0) and (args.window_size_right == 0) and
+        (ck_tile::get_device_name().compare(0, 5, "gfx11") == 0) and
+        (not traits.is_group_mode) and traits.is_v_rowmajor and
+        (not traits.has_logits_soft_cap) and
+        (traits.bias_type == bias_enum::no_bias) and traits.has_lse and
+        (not traits.has_dropout) and
+        (traits.qscale_type == quant_scale_enum::no_scale) and
+        (not traits.skip_min_seqlen_q);
+
+    if(use_gfx11_d128_bf16_b64x32_causal)
+    {
+        using trait_ = fmha_fwd_traits_<128,
+                                            FmhaFwdBf16,
+                                            false,
+                                            64,
+                                            32,
+                                            16,
+                                            128,
+                                            32,
+                                            128,
+                                            true,
+                                            ck_tile::BlockFmhaPipelineEnum::QRKSVS,
+                                            false,
+                                            ck_tile::SimplifiedGenericAttentionMask<true>,
+                                            ck_tile::BlockAttentionBiasEnum::NO_BIAS,
+                                            true,
+                                            false,
+                                            ck_tile::BlockAttentionQuantScaleEnum::NO_SCALE,
+                                            false,
+                                            false,
+                                            false,
+                                            false,
+                                            false,
+                                            false>;
+        return fmha_fwd_<trait_, ck_tile::gfx11_t>(config, args);
+    }
+
+    // The legacy D256 causal dispatcher over-partitions Q=64/128 into smaller
+    // tiles. Reuse the linked b64x64 kernel to eliminate that short-Q/long-K
+    // scaling cliff while leaving the mixed results at larger Q untouched.
+    const bool use_gfx11_d256_bf16_b64x64_causal =
+        (traits.data_type.compare("bf16") == 0) and
+        (traits.mask_type == mask_enum::mask_top_left or
+         traits.mask_type == mask_enum::mask_bottom_right) and
+        (args.seqlen_q > 0) and (args.seqlen_q <= 128) and
+        (args.seqlen_q % 64 == 0) and
+        (args.seqlen_k > 0) and (args.seqlen_k % 64 == 0) and
+        (args.cu_seqlen_k_ptr == nullptr) and
+        (args.hdim_q == 256) and (args.hdim_v == 256) and
+        (args.window_size_left < 0) and (args.window_size_right == 0) and
+        (ck_tile::get_device_name().compare(0, 5, "gfx11") == 0) and
+        (not traits.is_group_mode) and traits.is_v_rowmajor and
+        (not traits.has_logits_soft_cap) and
+        (traits.bias_type == bias_enum::no_bias) and traits.has_lse and
+        (not traits.has_dropout) and
+        (traits.qscale_type == quant_scale_enum::no_scale) and
+        (not traits.skip_min_seqlen_q);
+
+    if(use_gfx11_d256_bf16_b64x64_causal)
+    {
+        using trait_ = fmha_fwd_traits_<256,
+                                            FmhaFwdBf16,
+                                            false,
+                                            64,
+                                            64,
+                                            32,
+                                            256,
+                                            32,
+                                            256,
+                                            true,
+                                            ck_tile::BlockFmhaPipelineEnum::QRKSVS,
+                                            false,
+                                            ck_tile::SimplifiedGenericAttentionMask<true>,
                                             ck_tile::BlockAttentionBiasEnum::NO_BIAS,
                                             true,
                                             false,
