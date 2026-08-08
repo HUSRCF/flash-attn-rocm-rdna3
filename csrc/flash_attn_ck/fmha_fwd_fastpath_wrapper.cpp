@@ -268,6 +268,8 @@ float fmha_fwd_wrap(fmha_fwd_traits traits,
     // The legacy D256 causal dispatcher over-partitions Q=64/128 into smaller
     // tiles. Reuse the linked b64x64 kernel to eliminate that short-Q/long-K
     // scaling cliff while leaving the mixed results at larger Q untouched.
+    // Keep Q64/K64 on the legacy route: high-repeat ABBA showed no stable
+    // speedup there, so changing its reduction partition has no payoff.
     const bool use_gfx11_d256_bf16_b64x64_causal =
         (traits.data_type.compare("bf16") == 0) and
         (traits.mask_type == mask_enum::mask_top_left or
@@ -275,6 +277,7 @@ float fmha_fwd_wrap(fmha_fwd_traits traits,
         (args.seqlen_q > 0) and (args.seqlen_q <= 128) and
         (args.seqlen_q % 64 == 0) and
         (args.seqlen_k > 0) and (args.seqlen_k % 64 == 0) and
+        (args.seqlen_q == 128 or args.seqlen_k >= 128) and
         (args.cu_seqlen_k_ptr == nullptr) and
         (args.hdim_q == 256) and (args.hdim_v == 256) and
         (args.window_size_left < 0) and (args.window_size_right == 0) and
