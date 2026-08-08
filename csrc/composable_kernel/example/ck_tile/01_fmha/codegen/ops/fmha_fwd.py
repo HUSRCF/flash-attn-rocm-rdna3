@@ -48,6 +48,15 @@ def is_gfx11_d64_bm128_s4096_enabled() -> bool:
     return os.getenv("CK_TILE_DISABLE_FWD_D64_BM128_S4096", "0") != "1"
 
 
+def is_gfx11_d128_fp16_b128x64_o4_enabled() -> bool:
+    """Enable the validated D128 FP16 production tile unless explicitly rolled back."""
+    return (
+        os.getenv("CK_TILE_DISABLE_FWD_D128_FP16_B128X64_O4", "0") != "1"
+        and os.getenv("CK_TILE_DEBUG_FWD_D128_BM64_BN64", "0") != "1"
+        and os.getenv("CK_TILE_DEBUG_FWD_D128_FORCE_BM128", "0") != "1"
+    )
+
+
 def is_gfx11_fwd_debug_tile_override_enabled() -> bool:
     """Keep native-O off whenever an unvalidated debug dispatch override is active."""
     debug_gates = (
@@ -479,6 +488,37 @@ class FmhaFwdApiTrait:
                 return f"a.hdim_v % {bk0submax} == 0"
         else:
             assert False
+
+
+def is_gfx11_d128_fp16_b128x64_o4_api_trait(trait: FmhaFwdApiTrait) -> bool:
+    """Identify the single production trait dispatched by the outer fast-path gate."""
+    return (
+        is_gfx11_d128_fp16_b128x64_o4_enabled()
+        and trait.arch.name == "gfx11"
+        and str(trait.hdim) == "128"
+        and trait.dtype == "fp16"
+        and trait.mode == "batch"
+        and trait.pipeline_tag == "qr"
+        and trait.vlayout == "row"
+        and trait.spad == "t"
+        and trait.skpad == "t"
+        and trait.dpad == "f"
+        and trait.dvpad == "f"
+        and trait.logits == "f"
+        and trait.mask in ("causal", "s_mask")
+        and trait.bias == "no"
+        and trait.lse == "t"
+        and trait.dropout == "f"
+        and trait.qscale == "no"
+        and trait.skip == "f"
+        and trait.tr_load == "f"
+        and trait.bm0 == 128
+        and trait.bn0 == 64
+        and trait.bk0 == 32
+        and trait.bn1 == 128
+        and trait.bk1 == 32
+        and trait.bk0max == 128
+    )
 
 
 @dataclass
@@ -1229,6 +1269,58 @@ class KernelComponentFactoryGfx11(CompatibilityRuleFactory):
     def get_rules(cls) -> list[CompatibilityRule]:
         rules = CompatibilityRuleFactory.get_rules()
 
+        def check_d128_fp16_b128x64_o4(
+            problem_ctx: ProblemContext, kernel_ctx: KernelContext
+        ) -> bool:
+            tile = kernel_ctx.tile
+            pipeline = kernel_ctx.pipeline
+            is_b128x64_o4 = (
+                tile.F_bm0 == 128
+                and tile.F_bn0 == 64
+                and tile.F_bk0 == 32
+                and tile.F_bn1 == 128
+                and tile.F_bk1 == 32
+                and tile.F_bk0max == 128
+                and tile.F_rm0 == 8
+                and tile.F_rn0 == 1
+                and tile.F_rk0 == 1
+                and tile.F_rm1 == 8
+                and tile.F_rn1 == 1
+                and tile.F_rk1 == 1
+                and tile.F_wm0 == 16
+                and tile.F_wn0 == 16
+                and tile.F_wk0 == 16
+                and tile.F_wm1 == 16
+                and tile.F_wn1 == 16
+                and tile.F_wk1 == 16
+                and tile.F_occupancy == 4
+            )
+            if not is_b128x64_o4:
+                return True
+
+            return (
+                is_gfx11_d128_fp16_b128x64_o4_enabled()
+                and problem_ctx.dtype == "fp16"
+                and problem_ctx.mode == "batch"
+                and (problem_ctx.hdim, problem_ctx.hdim_v) == (128, 128)
+                and pipeline.tag == "qr"
+                and pipeline.F_vlayout == "row"
+                and pipeline.F_spad == "t"
+                and pipeline.F_skpad == "t"
+                and pipeline.F_dpad == "f"
+                and pipeline.F_dvpad == "f"
+                and pipeline.F_logits == "f"
+                and pipeline.F_mask in ("causal", "s_mask")
+                and pipeline.F_bias == "no"
+                and pipeline.F_lse == "t"
+                and pipeline.F_dropout == "f"
+                and pipeline.F_qscale == "no"
+                and pipeline.F_skip == "f"
+                and pipeline.F_trload == "f"
+            )
+
+        rules.append(check_d128_fp16_b128x64_o4)
+
         def check_d64_bm128_register_p(
             problem_ctx: ProblemContext, kernel_ctx: KernelContext
         ) -> bool:
@@ -1351,6 +1443,18 @@ class KernelComponentFactoryGfx11(CompatibilityRuleFactory):
             if dtype == "fp16" and is_gfx11_d64_bm128_s4096_enabled():
                 tiles[(64, 64)].append(
                     FmhaFwdTileSize(128,  64,  32,  64,  32,   64,  8, 1, 1,  8, 1, 1,  16, 16, 16,  16, 16, 16,  -1)
+                )  # fmt: skip
+
+            if (
+                dtype == "fp16"
+                and is_gfx11_d128_fp16_b128x64_o4_enabled()
+                and not any(d128_tile_gates)
+            ):
+                # The kernel is linked into the full extension but excluded
+                # from the legacy generated API table. A small outer wrapper
+                # calls it only for the validated runtime domain.
+                tiles[(128, 128)].append(
+                    FmhaFwdTileSize(128,  64,  32, 128,  32,  128,  8, 1, 1,  8, 1, 1,  16, 16, 16,  16, 16, 16,   4),
                 )  # fmt: skip
 
             # D256 debug gates override the default D256 short/long tile policy.
@@ -1778,8 +1882,15 @@ def write_fwd_api(
     def accept_only_v3(trait: FmhaFwdApiTrait) -> bool:
         return trait.pipeline_tag == "qr_async_trload_v3"
 
+    def accept_only_gfx11_d128_fp16_b128x64_o4(
+        trait: FmhaFwdApiTrait,
+    ) -> bool:
+        return is_gfx11_d128_fp16_b128x64_o4_api_trait(trait)
+
     def accept_only_v2(trait: FmhaFwdApiTrait) -> bool:
-        return not accept_only_v3(trait)
+        return not accept_only_v3(trait) and not accept_only_gfx11_d128_fp16_b128x64_o4(
+            trait
+        )
 
     content = "".join(
         [

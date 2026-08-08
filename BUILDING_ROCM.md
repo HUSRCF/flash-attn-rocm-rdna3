@@ -13,6 +13,14 @@ already be available in the build environment. The exact environment used for
 release validation is recorded in `VENDORED_DEPENDENCIES.json`; other
 combinations are not implied to be release-validated.
 
+Compiler compatibility is performance-sensitive even when compilation and
+correctness both succeed. The accepted artifact was linked from the frozen
+ROCm 7.2/Clang 22 object closure matching its PyTorch ROCm runtime. A diagnostic
+rebuild with the host ROCm 7.14/Clang 23 compiler changed the large legacy FWD
+dispatcher and slowed existing short and non-causal routes despite leaving the
+device payload of the selected kernel unchanged. Use a compiler matching the
+PyTorch ROCm major/minor version for release-comparable performance.
+
 The rocThrust and rocPRIM headers needed by PyTorch HIP extension compilation are
 included under `csrc/`. A separate system rocThrust or rocPRIM development
 is therefore not required for this frozen build.
@@ -170,6 +178,58 @@ The accepted native-O and D64-only backward choices are frozen in source
 defaults. A development archive may also contain an ignored `command.md` lab
 notebook; its historical commands intentionally use non-release overrides and
 are not part of the source release.
+
+## Conditional gfx11 FP16/D128 causal forward path
+
+The frozen full build includes an additional standard batch FWD specialization
+for FP16/backend-D128 on gfx11. It uses the QR row-V pipeline, a `128 x 64`
+query/K tile, occupancy 4, sequence padding, exact backend head dimensions,
+LSE, no bias, no dropout, and the native-O epilogue. Code generation restricts
+the specialization to the validated pure-causal feature domain; it is not
+generated for non-causal, BF16, group/varlen, or other feature combinations.
+Dispatch rejects unpadded partial backend dimensions. A user-level dimension
+such as 127 is padded by the Python interface to backend D128 and is therefore
+intentionally treated as a D128 call before the output is sliced back to the
+requested width.
+
+In standard batch mode, `max_seqlen_q` is the runtime query-length bound and
+equals `seqlen_q` for the fixed-length calls validated here. The runtime gate
+requires an unbounded left window, a zero right window,
+`max_seqlen_q >= 2048`, `seqlen_k >= 768`, and `batch * nhead_q >= 4`.
+Non-causal calls always retain the existing dispatch.
+
+The new trait is deliberately excluded from the generated legacy `fmha_fwd_v2`
+API table. The full build links a small GNU-linker wrapper in front of
+`fmha_fwd`; it checks the K threshold first, calls the new trait directly only
+when every gate matches, and otherwise calls the unmodified legacy dispatcher.
+This keeps existing `128 x 32`, short-sequence, non-causal, BF16, varlen, and
+feature-rich routes out of the large-dispatcher compiler-layout perturbation
+that was observed during development. Minimal debug builds omit both the
+wrapper and its linker option.
+
+The accepted GPU1 precision validation covered the causal boundary cases with
+an FP32 oracle. All seven focused cases passed, including the padded user-level
+D127 case and exact backend D128 routing; focused FP16 D128 FWD+BWD validation
+also passed all four non-causal/causal S2048/S2560 cases. The largest observed
+focused FWD absolute error was 0.001953125.
+
+The final clean two-round full-vs-full ABBA measurements used 500 warmups, 50
+trials of 20 iterations, and a 10 percent trimmed mean. Non-causal Q=2560 at
+K=256/1024/2048/4096 measured 1.0014x, 0.9998x, 0.9996x, and 1.0000x versus the
+pre-change c18 package. Causal Q=2048 at K=1024/2048/4096 measured 1.2466x,
+1.3333x, and 1.1484x. The K256 fallback measured 0.9941x in that sweep; a
+separate 100-trial boundary sweep measured 0.9951x at K256, 0.9991x at K384,
+and gains from 1.0215x through 1.1947x over K512 through K1024. The production
+K gate remains 768 so only the clear-gain region selects the new kernel.
+
+In simplified-mask builds, the wrapper checks both the runtime mask enum and
+the decoded window bounds. It accepts only a pure top-left or bottom-right
+causal mask with an unbounded left window and a zero right window;
+sliding-window and generic masks call the unchanged legacy dispatcher.
+
+`CK_TILE_DISABLE_FWD_D128_FP16_B128X64_O4=1` is a developer-only minimal-build
+rollback. The frozen full-release source manifest assumes the accepted default
+is enabled, so do not set this override for `make build-full` or release wheels.
 
 To build and install a wheel locally:
 

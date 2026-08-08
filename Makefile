@@ -57,6 +57,7 @@ VENDOR_SENTINELS := \
 	csrc/rocprim/include/rocprim/rocprim_version.hpp \
 	csrc/rocprim/LICENSE.md \
 	csrc/rocprim/NOTICES.txt \
+	csrc/flash_attn_ck/fmha_fwd_fastpath_wrapper.cpp \
 	csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dk_dv_pipeline_kr_ktr_vr_iglp.hpp \
 	csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dq_pipeline_kr_ktr_vr_iglp.hpp \
 	csrc/composable_kernel/include/ck_tile/ops/fmha/pipeline/block_fmha_bwd_dq_qmajor_pipeline_kr_ktr_vr_iglp.hpp \

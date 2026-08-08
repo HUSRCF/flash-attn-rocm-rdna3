@@ -998,6 +998,7 @@ elif not SKIP_CUDA_BUILD and IS_ROCM:
             base_cpp_sources = [
                 "csrc/flash_attn_ck/flash_api.cpp",
                 "csrc/flash_attn_ck/flash_common.cpp",
+                "csrc/flash_attn_ck/fmha_fwd_fastpath_wrapper.cpp",
                 "csrc/flash_attn_ck/mha_bwd.cpp",
                 "csrc/flash_attn_ck/mha_fwd_kvcache.cpp",
                 "csrc/flash_attn_ck/mha_fwd.cpp",
@@ -1022,7 +1023,7 @@ elif not SKIP_CUDA_BUILD and IS_ROCM:
                 raise RuntimeError("[CK_MINIMAL_DEBUG] 过滤后无可用 CK kernel，请检查最小化条件")
 
         if CK_BUILD_PROFILE == "release" and not CK_MINIMAL_DEBUG:
-            expected_generated_sources = 3063
+            expected_generated_sources = 3064
             manifest_path = (
                 Path(this_dir)
                 / "csrc"
@@ -1095,6 +1096,7 @@ elif not SKIP_CUDA_BUILD and IS_ROCM:
             base_cu_sources = [
                 "csrc/flash_attn_ck/flash_api.cu",
                 "csrc/flash_attn_ck/flash_common.cu",
+                "csrc/flash_attn_ck/fmha_fwd_fastpath_wrapper.cu",
                 "csrc/flash_attn_ck/mha_bwd.cu",
                 "csrc/flash_attn_ck/mha_fwd_kvcache.cu",
                 "csrc/flash_attn_ck/mha_fwd.cu",
@@ -1645,6 +1647,15 @@ elif not SKIP_CUDA_BUILD and IS_ROCM:
                 name="flash_attn_2_cuda",
                 sources=renamed_sources,
                 extra_compile_args=extra_compile_args,
+                extra_link_args=(
+                    []
+                    if CK_MINIMAL_DEBUG
+                    else [
+                        "-Wl,--wrap="
+                        "_Z8fmha_fwd15fmha_fwd_traits13fmha_fwd_args"
+                        "RKN7ck_tile13stream_configE"
+                    ]
+                ),
                 include_dirs=include_dirs,
             )
         )

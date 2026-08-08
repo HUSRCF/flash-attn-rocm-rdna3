@@ -41,12 +41,12 @@
   },
   "validated_environment": {
     "python": "3.12.7",
-    "pytorch": "2.12.0+rocm7.2",
+    "pytorch": "2.12.1+rocm7.2",
     "hip": "7.2.53211"
   },
   "validated_artifact": {
     "filename": "flash_attn_2_cuda.cpython-312-x86_64-linux-gnu.so",
-    "sha256": "6be4ac4c2b26610afb8b493da9a5a4883757a5d1b73e546393bc723de409406b",
+    "sha256": "0d526098523e1fa77243680da4904cb9196bad69dec4bdbf10861bd31a0be1fd",
     "git_policy": "release asset only; not stored in source Git"
   },
   "vendored_file_inventory": "VENDORED_FILES.txt",
