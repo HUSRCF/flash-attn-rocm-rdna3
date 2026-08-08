@@ -133,6 +133,35 @@ and the figure can be regenerated with:
 python scripts/plot_c18_fastpath_ab.py
 ```
 
+### FP16 forward across head dimensions
+
+![FP16 forward D64/D128/D256 ABBA speedup](assets/fp16_fwd_abba_speedup.png)
+
+This cumulative comparison measures the current final package against the
+original old-c18 binary across FP16 forward, D64/D128/D256, non-causal and
+causal attention, and square S512/S1024/S2048/S4096 cases. The geometric-mean
+speedup across all 24 cases is 1.253x; the per-dimension geometric means are
+1.277x for D64, 1.256x for D128, and 1.228x for D256. The four D64/D128 S512
+points cluster near 1x (0.983x–1.051x), while every measured D256 aggregate is
+positive.
+
+Measurements used B2H4 on physical GPU1 (`gfx1100`). Each bar is the ratio of
+the medians of six process-level measurements per package; each process-level
+measurement is a 10%-trimmed mean over 100 trials after 1000 warmups, with 20
+kernel calls per trial. The positions come from three balanced ABBA rounds.
+The initially load-contaminated non-causal D128/S4096 point was replaced by a
+separate five-round, ten-position recheck, which measured 1.311x with a
+1.270x–1.379x round range.
+
+The checked-in source data is
+[`benchmarks/results/fp16_fwd_abba_20260808.csv`](benchmarks/results/fp16_fwd_abba_20260808.csv).
+The data and figure can be regenerated from the local raw ABBA outputs with:
+
+```bash
+python scripts/summarize_fp16_fwd_abba.py
+python scripts/plot_fp16_fwd_abba.py
+```
+
 ### BF16 causal forward ABBA
 
 ![BF16 causal forward ABBA speedup](assets/bf16_causal_abba_speedup.png)
