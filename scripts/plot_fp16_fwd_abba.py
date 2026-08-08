@@ -7,6 +7,7 @@ import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 import pandas as pd
 import seaborn as sns
 
@@ -14,6 +15,7 @@ import seaborn as sns
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA = ROOT / "benchmarks" / "results" / "fp16_fwd_abba_20260808.csv"
 DEFAULT_OUTPUT = ROOT / "assets" / "fp16_fwd_abba_speedup"
+SEQUENCE_ORDER = ["S512", "S1024", "S2048", "S4096"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,6 +37,15 @@ def render(data_path: Path, output_base: Path) -> None:
         raise ValueError("this figure requires both non-causal and causal measurements")
     if set(data["route"]) - {"optimized path", "gated fallback"}:
         raise ValueError("unknown route label")
+    expected_cases = {
+        (mask, dim, seq)
+        for mask in ("non-causal", "causal")
+        for dim in (64, 128, 256)
+        for seq in (512, 1024, 2048, 4096)
+    }
+    actual_cases = set(data[["mask", "headdim", "seqlen"]].itertuples(index=False, name=None))
+    if actual_cases != expected_cases:
+        raise ValueError("FP16 data does not contain the required common square matrix")
 
     sns.set_theme(
         context="paper",
@@ -65,6 +76,7 @@ def render(data_path: Path, output_base: Path) -> None:
             x="sequence",
             y="speedup",
             hue="mask_label",
+            order=SEQUENCE_ORDER,
             hue_order=["Non-causal", "Causal"],
             palette={
                 "Non-causal": mask_palette["non-causal"],
@@ -86,33 +98,33 @@ def render(data_path: Path, output_base: Path) -> None:
             (row.sequence, row.mask_label): row.route
             for row in subset.itertuples(index=False)
         }
-        sequence_order = list(dict.fromkeys(subset["sequence"]))
         for container, mask_label in zip(
             ax.containers[:2], ("Non-causal", "Causal"), strict=True
         ):
             labels = [
                 f"{value:.3f}x"
                 + ("*" if route_lookup[sequence, mask_label] == "gated fallback" else "")
-                for value, sequence in zip(container.datavalues, sequence_order, strict=True)
+                for value, sequence in zip(container.datavalues, SEQUENCE_ORDER, strict=True)
             ]
             ax.bar_label(container, labels=labels, padding=3, fontsize=7.2)
         if ax.legend_ is not None:
             ax.legend_.remove()
 
-    handles, labels = axes[0].get_legend_handles_labels()
-    if not handles:
-        handles = [container for container in axes[0].containers[:2]]
-        labels = ["Non-causal", "Causal"]
-    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.885), ncol=2, frameon=False)
+    handles = [
+        Patch(facecolor=mask_palette["non-causal"], label="Non-causal"),
+        Patch(facecolor=mask_palette["causal"], label="Causal"),
+    ]
+    labels = ["Non-causal", "Causal"]
+    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.865), ncol=2, frameon=False)
     fig.suptitle(
         "FP16 Forward Speedup — Final vs Old c18",
         fontsize=14,
         fontweight="bold",
-        y=1.02,
+        y=0.975,
     )
     fig.text(
         0.5,
-        0.94,
+        0.915,
         "* Gated short-sequence fallback; panels use independent y-scales",
         ha="center",
         fontsize=9.5,
@@ -121,7 +133,7 @@ def render(data_path: Path, output_base: Path) -> None:
     )
     fig.text(
         0.5,
-        0.01,
+        0.018,
         "Median across per-position 10%-trimmed means; 1000 warmups, 100 trials, 3 ABBA rounds "
         "(NC D128/S4096: 5-round recheck)",
         ha="center",
@@ -129,11 +141,11 @@ def render(data_path: Path, output_base: Path) -> None:
         color="0.28",
     )
     sns.despine(fig=fig)
-    fig.tight_layout(rect=(0, 0.045, 1, 0.84), w_pad=1.5)
+    fig.tight_layout(rect=(0, 0.065, 1, 0.80), w_pad=1.5)
 
     output_base.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_base.with_suffix(".pdf"), bbox_inches="tight", pad_inches=0.04)
-    fig.savefig(output_base.with_suffix(".png"), bbox_inches="tight", pad_inches=0.04)
+    fig.savefig(output_base.with_suffix(".pdf"), bbox_inches=None, pad_inches=0)
+    fig.savefig(output_base.with_suffix(".png"), bbox_inches=None, pad_inches=0)
     plt.close(fig)
     print(output_base.with_suffix(".pdf"))
     print(output_base.with_suffix(".png"))

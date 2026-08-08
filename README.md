@@ -169,27 +169,28 @@ python scripts/plot_fp16_fwd_abba.py
 
 ![BF16 non-causal and causal D64/D128/D256 ABBA speedup](assets/bf16_fwd_abba_speedup.png)
 
-This total view combines BF16 non-causal and causal forward measurements at
-head dimensions 64, 128, and 256. Each mask is compared with its matching
-pre-fast-path package, so the ratio isolates the path being evaluated instead
-of folding later, unrelated dispatch additions into the baseline. D64 and
-D128 each contain six paired Q/K shapes; D256 contains eight short-Q paired
-shapes that expose the causal scaling boundary.
+This cumulative comparison uses exactly the same square sequence matrix and
+x-axis as the FP16 figure: S512, S1024, S2048, and S4096 in every D64, D128,
+and D256 panel, with both non-causal and causal bars. It compares the current
+final package directly with the original old-c18 binary. The geometric-mean
+speedup across all 24 cases is 1.399x; the per-dimension geometric means are
+1.420x for D64, 1.496x for D128, and 1.289x for D256.
 
-All 31 enabled fast-path bars are positive in the paired-round aggregate: the
-geometric-mean speedup is 1.316x and the range is 1.015x–6.199x. D64 reaches
-1.462x, D128 reaches 1.221x, and causal D256 reaches 6.199x. Every D256
-non-causal bar remains on the gated fallback because the tested alternative
-tiles regressed; causal D256 Q64/K64 is also a fallback boundary. These control
-bars carry an asterisk. Their measured ratios must not be attributed to a new
-kernel because both packages execute the retained route for that mask/shape.
+The 14 enabled fast-path bars are all positive, with a 1.503x geometric mean
+and a 1.029x–1.992x range. Asterisks mark cases that do not enter the relevant
+new BF16 fast path: D128/S512 and all square D256 cases. The D256 causal
+specialization is restricted to short query lengths, while the non-causal
+D256 alternative was rejected, so neither belongs to this common S512+
+square matrix. Their positive cumulative package ratios remain visible, but
+must not be attributed to those gated BF16 paths. The earlier short-Q D256
+specialization results are intentionally excluded instead of mixing different
+Q/K indicators into this directly comparable figure.
 
-Measurements used B1H8 on physical GPU1 (RDNA3 `gfx1100`), 1000 warmups, 100
-trials, and 20 kernel calls per trial. Each plotted ratio is the median of
-paired ABBA-round speedups after taking a 10%-trimmed mean at each process
-position. Causal and D64 non-causal data use three rounds; D128 and D256
-non-causal use five-round rechecks to suppress an observed intermittent-load
-window. No temperature-based exclusion was applied.
+Measurements used B2H4 on physical GPU1 (RDNA3 `gfx1100`), 1000 warmups, 100
+trials, and 20 kernel calls per trial. Each package latency is the median of
+six process-level measurements; each position is a 10%-trimmed mean of its
+trials. All bars use three balanced ABBA rounds. No temperature-based
+exclusion was applied.
 
 The checked-in source data is
 [`benchmarks/results/bf16_fwd_abba_20260808.csv`](benchmarks/results/bf16_fwd_abba_20260808.csv).
