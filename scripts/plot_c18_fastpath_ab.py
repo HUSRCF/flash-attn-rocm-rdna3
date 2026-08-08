@@ -177,8 +177,14 @@ def render(data_path: Path, output_base: Path) -> None:
 
     ax_latency.text(-0.08, 1.02, "(a)", transform=ax_latency.transAxes, fontweight="bold")
     ax_boundary.text(-0.12, 1.02, "(b)", transform=ax_boundary.transAxes, fontweight="bold")
+    fig.suptitle(
+        "FP16 D128 Forward Performance — c18 Fast-Path A/B",
+        fontsize=13,
+        fontweight="bold",
+        y=1.01,
+    )
     sns.despine(fig=fig)
-    fig.tight_layout(w_pad=2.0)
+    fig.tight_layout(w_pad=2.0, rect=(0, 0, 1, 0.96))
 
     output_base.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_base.with_suffix(".pdf"), bbox_inches="tight", pad_inches=0.04)

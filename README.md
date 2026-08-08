@@ -133,6 +133,33 @@ and the figure can be regenerated with:
 python scripts/plot_c18_fastpath_ab.py
 ```
 
+### BF16 causal forward ABBA
+
+![BF16 causal forward ABBA speedup](assets/bf16_causal_abba_speedup.png)
+
+This final high-repeat sweep compares the previous release package with the
+BF16 causal-forward fast paths at head dimensions 64, 128, and 256. The plotted
+latencies are medians of six process-level measurements; each process-level
+measurement is a 10%-trimmed mean over 100 trials after 1000 warmups. The six
+positions come from three ABBA rounds on physical GPU1 (RDNA3 `gfx1100`).
+
+Every enabled fast-path point is positive in this robust aggregate: D64 spans
+1.030x–1.423x, D128 spans 1.042x–1.277x, and D256 spans 1.043x–6.503x. The
+D256 Q64/K64 point remains on the legacy route and measures 0.997x, with a
+three-round range of 0.986x–1.025x. This boundary point comes from a separate
+post-gate recheck because both binaries now execute the unchanged legacy path.
+As a source-level dispatch rule, the Q64 D256 fast path is enabled only from
+K128 upward; the plotted fast-path sweep begins at K256.
+
+The checked-in source data is
+[`benchmarks/results/bf16_causal_abba_20260808.csv`](benchmarks/results/bf16_causal_abba_20260808.csv).
+The data and figure can be regenerated from the local raw ABBA outputs with:
+
+```bash
+python scripts/summarize_bf16_causal_abba.py
+python scripts/plot_bf16_causal_abba.py
+```
+
 See
 [BUILDING_ROCM.md](BUILDING_ROCM.md) for offline builds, dependency
 provisioning, release-profile rules, and source-archive contents. For this
