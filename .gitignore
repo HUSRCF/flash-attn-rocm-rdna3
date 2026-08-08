@@ -38,6 +38,7 @@ venv/
 /*.s
 /*.tar.gz
 /flash_attn_fa4_*_prebuilt_*
+!/flash_attn_fa4_c18_prebuilt_gfx1100_py312_rocm72.tar.gz
 /fmha_*hipv4*
 /report_diff_vs_*.md
 /crash_stats*.csv

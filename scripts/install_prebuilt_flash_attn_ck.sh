@@ -12,6 +12,7 @@ Environment:
   PYTHON=python                         Python interpreter for target env.
   SITE_PACKAGES=/path/to/site-packages  Override install destination.
   ALLOW_ARCH_MISMATCH=1                 Allow non-gfx1100 GPU arch.
+  ALLOW_RUNTIME_MISMATCH=1              Allow non-PyTorch-2.12/ROCm-7.2 runtime.
   SKIP_GPU_CHECK=1                      Skip runtime GPU arch check.
 
 Notes:
@@ -87,6 +88,22 @@ except Exception as exc:
     raise SystemExit(f"ERROR: cannot import torch in target Python env: {exc!r}")
 
 print(f"torch={torch.__version__}, hip={getattr(torch.version, 'hip', None)}")
+
+torch_series = ".".join(torch.__version__.split("+", 1)[0].split(".")[:2])
+hip_version = str(getattr(torch.version, "hip", "") or "")
+hip_series = ".".join(hip_version.split(".")[:2])
+runtime_mismatches = []
+if torch_series != "2.12":
+    runtime_mismatches.append(f"PyTorch {torch_series} (expected 2.12)")
+if hip_series != "7.2":
+    runtime_mismatches.append(f"PyTorch HIP {hip_series or 'none'} (expected 7.2)")
+if runtime_mismatches and os.environ.get("ALLOW_RUNTIME_MISMATCH") != "1":
+    raise SystemExit(
+        "ERROR: prebuilt runtime mismatch: "
+        + ", ".join(runtime_mismatches)
+        + ". This binary is validated for PyTorch 2.12 / ROCm 7.2. "
+        "Set ALLOW_RUNTIME_MISMATCH=1 only after independent validation."
+    )
 
 if os.environ.get("SKIP_GPU_CHECK") == "1":
     print("gpu_check=skipped")
@@ -210,7 +227,8 @@ source_root=$ROOT_DIR
 so=$(basename "$so_path")
 target_arch=gfx1100
 python_abi=cpython-312-x86_64-linux-gnu
-rocm=7.2
+artifact_runtime=pytorch-2.12_rocm-7.2
+host_compiler_note=not_used_by_prebuilt_install
 created_at=$(date -Iseconds)
 EOF
 

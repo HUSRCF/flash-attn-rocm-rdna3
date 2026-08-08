@@ -80,7 +80,8 @@ itself is local. The release commands disable remote wheel lookup explicitly.
 ## Stable build targets
 
 - `make doctor` checks the Python, PyTorch, ROCm, Ninja, and compiler-facing
-  environment without compiling kernels.
+  environment without compiling kernels. It reports PyTorch ROCm and compiler
+  ROCm separately and warns when their major/minor versions differ.
 - `make vendor-check` checks the complete frozen vendored file inventory as
   well as required source and license sentinels.
 - `make freeze-check` combines release-tree structural checks.
@@ -270,6 +271,10 @@ of build closure by itself.
 
 - If `make doctor` reports a non-ROCm PyTorch build, install the matching ROCm
   PyTorch package before continuing.
+- If `make doctor` warns that PyTorch ROCm and compiler ROCm differ, the source
+  build may still complete, but do not treat it as release-performance-
+  equivalent. This host's observed combination is PyTorch ROCm 7.2 with the
+  ROCm 7.14 / Clang 23 compiler.
 - If Ninja jobs are killed or the host starts swapping, retry with a smaller
   `MAX_JOBS` value.
 - If `make vendor-check` fails, the clone or source archive is incomplete.

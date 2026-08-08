@@ -35,6 +35,13 @@ host memory, for example `MAX_JOBS=64`, or reduce it if the compiler processes
 are killed. The full CK build is intentionally large. It uses the vendored
 sources under `csrc/` and does not require `git submodule update`.
 
+`make doctor` reports the PyTorch ROCm runtime and the compiler ROCm version
+separately. On the validation host, the active PyTorch package is ROCm 7.2
+while `/opt/rocm` is ROCm 7.14. The commands above use the host 7.14 compiler
+and can produce a functional wheel, but that rebuild is not the accepted
+ROCm-7.2/Clang-22 performance artifact. Use a ROCm compiler matching
+`torch.version.hip` when release-comparable performance is required.
+
 Verify the installed package from outside the source checkout so the local
 Python directory cannot shadow `site-packages`:
 
@@ -73,8 +80,9 @@ make assert-local-full-extension
 
 ### Install the prebuilt release bundle
 
-If the matching CPython 3.12 / ROCm 7.2 / `gfx1100` release tarball is
-available, it can be installed without compiling:
+The matching CPython 3.12 / PyTorch ROCm 7.2 / `gfx1100` release tarball is
+tracked at the repository root, so a normal clone already contains it. It can
+be installed without compiling:
 
 ```bash
 tar -xzf flash_attn_fa4_c18_prebuilt_gfx1100_py312_rocm72.tar.gz
@@ -83,8 +91,11 @@ PYTHON=python ./scripts/install_prebuilt_flash_attn_ck.sh check
 PYTHON=python ./scripts/install_prebuilt_flash_attn_ck.sh install
 ```
 
-The installer checks the Python ABI and visible GPU architecture before copying
-the Python package and extension into the active environment.
+The installer checks Python 3.12, PyTorch 2.12 with its ROCm 7.2 runtime, and
+the visible `gfx1100` GPU before copying the package and extension. The
+`rocm72` filename refers to the PyTorch/runtime ABI used by the binary, not the
+unused system compiler: this host may expose ROCm 7.14 under `/opt/rocm`, but
+the prebuilt install does not invoke it.
 
 ### Validated A/B performance
 

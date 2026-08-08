@@ -109,7 +109,7 @@ help:
 doctor:
 	@printf 'Python: '
 	@$(PYTHON) --version
-	@$(PYTHON) -c 'from pathlib import Path; import packaging, psutil, torch, wheel; from torch.utils.cpp_extension import ROCM_HOME; assert torch.version.hip, "PyTorch is not a ROCm build"; assert ROCM_HOME, "PyTorch could not locate ROCm"; hipcc=Path(ROCM_HOME) / "bin" / "hipcc"; assert hipcc.is_file(), "missing ROCm compiler: " + str(hipcc); print("torch=" + torch.__version__ + ", rocm=" + str(torch.version.hip) + ", rocm_home=" + str(ROCM_HOME))'
+	@$(PYTHON) -c 'from pathlib import Path; import packaging, psutil, re, subprocess, sys, torch, wheel; from torch.utils.cpp_extension import ROCM_HOME; assert torch.version.hip, "PyTorch is not a ROCm build"; assert ROCM_HOME, "PyTorch could not locate ROCm"; hipcc=Path(ROCM_HOME) / "bin" / "hipcc"; assert hipcc.is_file(), "missing ROCm compiler: " + str(hipcc); output=subprocess.check_output([str(hipcc), "--version"], text=True, stderr=subprocess.STDOUT); match=re.search(r"HIP version:\s*([0-9]+\.[0-9]+)", output); compiler_rocm=match.group(1) if match else "unknown"; torch_rocm=".".join(str(torch.version.hip).split(".")[:2]); print("torch=" + torch.__version__ + ", torch_rocm=" + str(torch.version.hip) + ", compiler_rocm=" + compiler_rocm + ", rocm_home=" + str(ROCM_HOME)); print("WARNING: PyTorch ROCm " + torch_rocm + " and compiler ROCm " + compiler_rocm + " differ; compilation may succeed but is not release-performance-equivalent.", file=sys.stderr) if compiler_rocm != "unknown" and compiler_rocm != torch_rocm else None'
 	@for tool in cmake ninja tar; do \
 		command -v "$$tool" >/dev/null || { echo "ERROR: missing required tool: $$tool" >&2; exit 1; }; \
 	done
