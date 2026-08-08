@@ -142,8 +142,11 @@ original old-c18 binary across FP16 forward, D64/D128/D256, non-causal and
 causal attention, and square S512/S1024/S2048/S4096 cases. The geometric-mean
 speedup across all 24 cases is 1.253x; the per-dimension geometric means are
 1.277x for D64, 1.256x for D128, and 1.228x for D256. The four D64/D128 S512
-points cluster near 1x (0.983x–1.051x), while every measured D256 aggregate is
-positive.
+bars are gated short-sequence fallback controls and are marked with an
+asterisk. Their 0.983x–1.051x spread is measurement noise around the retained
+route, not a fast-path regression. Keeping these controls in the figure makes
+the dispatch boundary visible; for D64/D128, the optimized sequence-length
+bars begin at S1024. Every measured D256 aggregate is positive.
 
 Measurements used B2H4 on physical GPU1 (`gfx1100`). Each bar is the ratio of
 the medians of six process-level measurements per package; each process-level
@@ -162,31 +165,39 @@ python scripts/summarize_fp16_fwd_abba.py
 python scripts/plot_fp16_fwd_abba.py
 ```
 
-### BF16 causal forward ABBA
+### BF16 forward across head dimensions
 
-![BF16 causal forward ABBA speedup](assets/bf16_causal_abba_speedup.png)
+![BF16 non-causal and causal D64/D128/D256 ABBA speedup](assets/bf16_fwd_abba_speedup.png)
 
-This final high-repeat sweep compares the previous release package with the
-BF16 causal-forward fast paths at head dimensions 64, 128, and 256. The plotted
-latencies are medians of six process-level measurements; each process-level
-measurement is a 10%-trimmed mean over 100 trials after 1000 warmups. The six
-positions come from three ABBA rounds on physical GPU1 (RDNA3 `gfx1100`).
+This total view combines BF16 non-causal and causal forward measurements at
+head dimensions 64, 128, and 256. Each mask is compared with its matching
+pre-fast-path package, so the ratio isolates the path being evaluated instead
+of folding later, unrelated dispatch additions into the baseline. D64 and
+D128 each contain six paired Q/K shapes; D256 contains eight short-Q paired
+shapes that expose the causal scaling boundary.
 
-Every enabled fast-path point is positive in this robust aggregate: D64 spans
-1.030x–1.423x, D128 spans 1.042x–1.277x, and D256 spans 1.043x–6.503x. The
-D256 Q64/K64 point remains on the legacy route and measures 0.997x, with a
-three-round range of 0.986x–1.025x. This boundary point comes from a separate
-post-gate recheck because both binaries now execute the unchanged legacy path.
-As a source-level dispatch rule, the Q64 D256 fast path is enabled only from
-K128 upward; the plotted fast-path sweep begins at K256.
+All 31 enabled fast-path bars are positive in the paired-round aggregate: the
+geometric-mean speedup is 1.316x and the range is 1.015x–6.199x. D64 reaches
+1.462x, D128 reaches 1.221x, and causal D256 reaches 6.199x. Every D256
+non-causal bar remains on the gated fallback because the tested alternative
+tiles regressed; causal D256 Q64/K64 is also a fallback boundary. These control
+bars carry an asterisk. Their measured ratios must not be attributed to a new
+kernel because both packages execute the retained route for that mask/shape.
+
+Measurements used B1H8 on physical GPU1 (RDNA3 `gfx1100`), 1000 warmups, 100
+trials, and 20 kernel calls per trial. Each plotted ratio is the median of
+paired ABBA-round speedups after taking a 10%-trimmed mean at each process
+position. Causal and D64 non-causal data use three rounds; D128 and D256
+non-causal use five-round rechecks to suppress an observed intermittent-load
+window. No temperature-based exclusion was applied.
 
 The checked-in source data is
-[`benchmarks/results/bf16_causal_abba_20260808.csv`](benchmarks/results/bf16_causal_abba_20260808.csv).
+[`benchmarks/results/bf16_fwd_abba_20260808.csv`](benchmarks/results/bf16_fwd_abba_20260808.csv).
 The data and figure can be regenerated from the local raw ABBA outputs with:
 
 ```bash
-python scripts/summarize_bf16_causal_abba.py
-python scripts/plot_bf16_causal_abba.py
+python scripts/summarize_bf16_fwd_abba.py
+python scripts/plot_bf16_fwd_abba.py
 ```
 
 See

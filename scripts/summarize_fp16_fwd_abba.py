@@ -135,6 +135,11 @@ def main() -> None:
                 "mask": "causal" if causal else "non-causal",
                 "headdim": headdim,
                 "seqlen": seqlen,
+                "route": (
+                    "gated fallback"
+                    if headdim in (64, 128) and seqlen == 512
+                    else "optimized path"
+                ),
                 "baseline": "old c18",
                 "optimized": "final package",
                 "baseline_ms": baseline_ms,
