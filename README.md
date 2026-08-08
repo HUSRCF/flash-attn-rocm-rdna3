@@ -8,17 +8,85 @@ setup step and does not download source dependencies while building. ROCm, a
 matching ROCm-enabled PyTorch installation, and the Python build tools remain
 external prerequisites.
 
-For the validated `gfx1100` path, start with:
+The validated release target is RDNA3 `gfx1100`, with the release artifact
+tested against PyTorch ROCm 7.2 and a matching ROCm 7.2 / Clang 22 toolchain.
+The ROCm compiler major/minor version should match the ROCm version used by
+PyTorch; a newer compiler may build successfully while changing performance.
+
+### Build and install from source
+
+The recommended installation path builds the complete frozen kernel set into a
+local wheel and then installs that wheel without resolving or replacing the
+existing ROCm/PyTorch environment:
+
+```bash
+git clone https://github.com/HUSRCF/flash-attn-rocm-rdna3.git
+cd flash-attn-rocm-rdna3
+
+python -m pip install -r requirements-build.txt
+make doctor
+make freeze-check
+make wheel MAX_JOBS=8
+python -m pip install --no-deps --force-reinstall dist/*.whl
+```
+
+`MAX_JOBS` controls parallel compilation. Increase it on a machine with enough
+host memory, for example `MAX_JOBS=64`, or reduce it if the compiler processes
+are killed. The full CK build is intentionally large. It uses the vendored
+sources under `csrc/` and does not require `git submodule update`.
+
+Verify the installed package from outside the source checkout so the local
+Python directory cannot shadow `site-packages`:
+
+```bash
+cd /tmp
+python - <<'PY'
+import torch
+import flash_attn
+import flash_attn_2_cuda
+
+print("torch:", torch.__version__, "ROCm:", torch.version.hip)
+print("flash_attn:", flash_attn.__file__)
+print("extension:", flash_attn_2_cuda.__file__)
+PY
+```
+
+Import `torch` before `flash_attn_2_cuda` so the PyTorch extension libraries are
+already loaded.
+
+### Build and test without installing
+
+For a small compiler and GPU smoke test, followed by the complete in-place
+build:
 
 ```bash
 make doctor
 make vendor-check
 make test-smoke
+make build-full MAX_JOBS=8
+make assert-local-full-extension
 ```
 
 `make test-smoke` builds the minimal closure before testing it. Use
 `make test-release` to build and test the frozen full kernel set, or
-`make build-full` when only compilation is wanted. See
+`make build-full` when only compilation is wanted.
+
+### Install the prebuilt release bundle
+
+If the matching CPython 3.12 / ROCm 7.2 / `gfx1100` release tarball is
+available, it can be installed without compiling:
+
+```bash
+tar -xzf flash_attn_fa4_c18_prebuilt_gfx1100_py312_rocm72.tar.gz
+cd flash-attn-fa4-prebuilt
+PYTHON=python ./scripts/install_prebuilt_flash_attn_ck.sh check
+PYTHON=python ./scripts/install_prebuilt_flash_attn_ck.sh install
+```
+
+The installer checks the Python ABI and visible GPU architecture before copying
+the Python package and extension into the active environment.
+
+See
 [BUILDING_ROCM.md](BUILDING_ROCM.md) for offline builds, dependency
 provisioning, release-profile rules, and source-archive contents. For this
 snapshot, use those Make targets and the build guide as the installation and
