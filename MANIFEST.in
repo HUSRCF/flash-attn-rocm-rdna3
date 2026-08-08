@@ -11,7 +11,8 @@ include setup.py
 
 recursive-include docs/release *.md
 recursive-include scripts *.py *.sh
-recursive-include assets *.png *.jpg
+recursive-include assets *.png *.jpg *.pdf
+recursive-include benchmarks/results *.csv
 
 # Package Python and native sources, including the complete vendored CK and
 # CUTLASS source trees plus rocThrust and rocPRIM header trees. The code

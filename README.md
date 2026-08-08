@@ -86,6 +86,53 @@ PYTHON=python ./scripts/install_prebuilt_flash_attn_ck.sh install
 The installer checks the Python ABI and visible GPU architecture before copying
 the Python package and extension into the active environment.
 
+### Validated A/B performance
+
+![c18 FP16/D128 forward A/B performance](assets/c18_fastpath_ab_performance.png)
+
+Panel (a) compares absolute FWD latency in the final full-package ABBA sweep.
+Panel (b) shows the higher-repeat causal K-boundary sweep and the production
+K=768 fast-path gate. A is the pre-change c18 package and B is the final package;
+speedup is `A latency / B latency`, so values above 1 mean B is faster.
+
+| Protocol | Mask | Q | K | Runtime route | A baseline (ms) | B optimized (ms) | Speedup | Speedup gain | ABBA round range |
+|---|---:|---:|---:|---|---:|---:|---:|---:|---:|
+| Full-package | Non-causal | 2560 | 256 | Legacy fallback | 0.058389 | 0.058306 | 1.0014x | +0.14% | 1.0002–1.0026x |
+| Full-package | Non-causal | 2560 | 1024 | Legacy fallback | 0.178162 | 0.178189 | 0.9998x | -0.02% | 0.9987–1.0010x |
+| Full-package | Non-causal | 2560 | 2048 | Legacy fallback | 0.360059 | 0.360209 | 0.9996x | -0.04% | 0.9995–0.9997x |
+| Full-package | Non-causal | 2560 | 4096 | Legacy fallback | 0.713458 | 0.713440 | 1.0000x | +0.00% | 0.9994–1.0007x |
+| Full-package | Causal | 2048 | 256 | Legacy fallback | 0.047241 | 0.047521 | 0.9941x | -0.59% | 0.9883–0.9999x |
+| Full-package | Causal | 2048 | 1024 | Fast path | 0.075716 | 0.060750 | 1.2466x | +24.66% | 1.2250–1.2687x |
+| Full-package | Causal | 2048 | 2048 | Fast path | 0.164891 | 0.123702 | 1.3333x | +33.33% | 1.3069–1.3602x |
+| Full-package | Causal | 2048 | 4096 | Fast path | 0.315022 | 0.274334 | 1.1484x | +14.84% | 1.1322–1.1648x |
+| K-boundary | Causal | 2048 | 256 | Legacy fallback | 0.047100 | 0.047333 | 0.9951x | -0.49% | 0.9916–0.9986x |
+| K-boundary | Causal | 2048 | 384 | Legacy fallback | 0.047143 | 0.047188 | 0.9991x | -0.09% | 0.9959–1.0022x |
+| K-boundary | Causal | 2048 | 512 | Legacy fallback | 0.048753 | 0.047721 | 1.0215x | +2.15% | 1.0135–1.0297x |
+| K-boundary | Causal | 2048 | 640 | Legacy fallback | 0.048746 | 0.048266 | 1.0098x | +0.98% | 0.9997–1.0200x |
+| K-boundary | Causal | 2048 | 768 | Fast path | 0.053019 | 0.046461 | 1.1411x | +14.11% | 1.1401–1.1422x |
+| K-boundary | Causal | 2048 | 896 | Fast path | 0.059990 | 0.050553 | 1.1867x | +18.67% | 1.1793–1.1941x |
+| K-boundary | Causal | 2048 | 1024 | Fast path | 0.066926 | 0.056019 | 1.1947x | +19.47% | 1.1932–1.1962x |
+
+The fast path provides a reproducible 1.141x–1.333x speedup in its validated
+causal region, corresponding to approximately 12.4%–25.0% lower latency.
+Non-causal full-package points remain within 0.15% of the baseline. K512 and
+K640 still use the legacy fallback, so their positive values must not be
+attributed to the fast kernel. Both protocols used 500 warmups, 20 kernel
+iterations per trial, two ABBA rounds, and a 10% trimmed mean; the full sweep
+used 50 trials per binary position and the K-boundary sweep used 100.
+
+The measurements used physical GPU1, an AMD Radeon Pro W7900 Dual Slot
+(`gfx1100`), FP16, and head dimension 128. Full-package non-causal cases used
+B1H8; full-package causal and K-boundary cases used B1H4.
+
+The checked-in source data is
+[`benchmarks/results/c18_fastpath_ab_20260808.csv`](benchmarks/results/c18_fastpath_ab_20260808.csv),
+and the figure can be regenerated with:
+
+```bash
+python scripts/plot_c18_fastpath_ab.py
+```
+
 See
 [BUILDING_ROCM.md](BUILDING_ROCM.md) for offline builds, dependency
 provisioning, release-profile rules, and source-archive contents. For this
